@@ -199,10 +199,11 @@ def render(model_id: int, out: Path = None, angles: int = None):
 
 
 @app.command("ai-generate")
-def ai_generate(model_id: int):
+def ai_generate(model_id: int, model: str = typer.Option(None, "--model",
+                help="Modelo de Claude: opus|sonnet|haiku|fable o nombre completo")):
     from .publish import prepare_publish
     with _session() as c:
-        meta, shots = _run(lambda: prepare_publish(c, c.settings, model_id))
+        meta, shots = _run(lambda: prepare_publish(c, c.settings, model_id, model=model))
         _dump({"meta": meta.model_dump(), "shots": [str(s) for s in shots]})
 
 
@@ -224,10 +225,12 @@ def publish(model_id: int, title: str = None, description: str = None,
 
 
 @app.command("ai-publish")
-def ai_publish(model_id: int, yes: bool = typer.Option(False, "--yes")):
+def ai_publish(model_id: int, yes: bool = typer.Option(False, "--yes"),
+               model: str = typer.Option(None, "--model",
+               help="Modelo de Claude: opus|sonnet|haiku|fable o nombre completo")):
     from .publish import commit_publish, prepare_publish
     with _session() as c:
-        meta, shots = _run(lambda: prepare_publish(c, c.settings, model_id))
+        meta, shots = _run(lambda: prepare_publish(c, c.settings, model_id, model=model))
         typer.echo(_json.dumps(meta.model_dump(), ensure_ascii=False, indent=2))
         if not yes:
             typer.confirm("¿Publicar con estos metadatos?", abort=True)
@@ -271,6 +274,8 @@ def batch_upload_cmd(paths: list[Path],
 def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
                          all_drafts: bool = typer.Option(False, "--all-drafts"),
                          yes: bool = typer.Option(False, "--yes"),
+                         model: str = typer.Option(None, "--model",
+                             help="Modelo de Claude: opus|sonnet|haiku|fable o nombre completo"),
                          json_out: bool = typer.Option(False, "--json")):
     """Ejecuta el flujo completo "Publicar con IA" para un lote de modelos.
 
@@ -292,7 +297,7 @@ def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
         def prog(i, total, mid, phase):
             typer.echo(f"  [{i + 1}/{total}] {phase} modelo {mid}…")
 
-        results = batch_ai_publish(c, c.settings, ids, on_progress=prog)
+        results = batch_ai_publish(c, c.settings, ids, model=model, on_progress=prog)
         ok = [r for r in results if r["ok"]]
         fail = [r for r in results if not r["ok"]]
         if json_out:

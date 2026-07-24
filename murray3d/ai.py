@@ -11,6 +11,11 @@ class AiError(Exception):
     pass
 
 
+# Alias de modelos de Claude que ofrece la UI (además de "por defecto").
+# `claude --model` acepta estos alias o el nombre completo del modelo.
+CLAUDE_MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"]
+
+
 JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -77,8 +82,12 @@ def build_pack_prompt(shots: list[Path], model_titles: list[str]) -> str:
     )
 
 
+def _model_args(model) -> list[str]:
+    return ["--model", model] if model else []
+
+
 def generate_pack_metadata(shots: list[Path], model_titles: list[str],
-                           runner=None) -> GeneratedPackMeta:
+                           runner=None, model=None) -> GeneratedPackMeta:
     if not shots:
         raise AiError("No hay imágenes de modelos para analizar")
     runner = runner or default_runner
@@ -88,6 +97,7 @@ def generate_pack_metadata(shots: list[Path], model_titles: list[str],
         "claude", "-p", prompt,
         "--output-format", "json",
         "--json-schema", json.dumps(PACK_JSON_SCHEMA),
+        *_model_args(model),
         "--add-dir", str(shots_dir),
         "--allowedTools", "Read",
     ]
@@ -125,7 +135,8 @@ def _extract_inner_json(stdout: str) -> dict:
         raise AiError(f"No se pudo parsear el JSON de metadatos: {e}") from e
 
 
-def generate_metadata(shots: list[Path], categories: list[str], runner=None) -> GeneratedMeta:
+def generate_metadata(shots: list[Path], categories: list[str], runner=None,
+                      model=None) -> GeneratedMeta:
     if not shots:
         raise AiError("No hay pantallazos para analizar")
     runner = runner or default_runner
@@ -135,6 +146,7 @@ def generate_metadata(shots: list[Path], categories: list[str], runner=None) -> 
         "claude", "-p", prompt,
         "--output-format", "json",
         "--json-schema", json.dumps(JSON_SCHEMA),
+        *_model_args(model),
         "--add-dir", str(shots_dir),
         "--allowedTools", "Read",
     ]

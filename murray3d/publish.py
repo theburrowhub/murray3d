@@ -9,18 +9,20 @@ from .render import DEFAULT_ANGLES, render_screenshots
 
 
 def prepare_publish(client, settings, model_id, angles=None,
-                    render_fn=None, ai_fn=None) -> tuple[GeneratedMeta, list[Path]]:
+                    render_fn=None, ai_fn=None, model=None
+                    ) -> tuple[GeneratedMeta, list[Path]]:
     render_fn = render_fn or render_screenshots
     ai_fn = ai_fn or generate_metadata
 
-    model = client.get_model(model_id)
-    ext = (model.file_format or "glb").lstrip(".")
+    model3d = client.get_model(model_id)
+    ext = (model3d.file_format or "glb").lstrip(".")
     work = settings.shots_dir / str(model_id)
     work.mkdir(parents=True, exist_ok=True)
     src = client.download_model(model_id, work / f"model.{ext}")
     shots = render_fn(src, work, settings.cache_dir, angles) if angles is not None \
         else render_fn(src, work, settings.cache_dir)
-    meta = ai_fn(shots, settings.known_categories)
+    ai_kwargs = {"model": model} if model is not None else {}
+    meta = ai_fn(shots, settings.known_categories, **ai_kwargs)
     return meta, shots
 
 
@@ -40,8 +42,8 @@ def commit_publish(client, model_id, meta: GeneratedMeta, shots: list[Path],
     return updated
 
 
-def prepare_pack_publish(client, settings, pack_id, render_fn=None, ai_fn=None
-                         ) -> tuple[GeneratedPackMeta, list[Path], Pack]:
+def prepare_pack_publish(client, settings, pack_id, render_fn=None, ai_fn=None,
+                         model=None) -> tuple[GeneratedPackMeta, list[Path], Pack]:
     """Renderiza una imagen por modelo del pack y genera metadatos del bundle."""
     render_fn = render_fn or render_screenshots
     ai_fn = ai_fn or generate_pack_metadata
@@ -67,7 +69,8 @@ def prepare_pack_publish(client, settings, pack_id, render_fn=None, ai_fn=None
         shutil.copy2(rendered[0], dest)
         shots.append(dest)
 
-    meta = ai_fn(shots, titles)
+    ai_kwargs = {"model": model} if model is not None else {}
+    meta = ai_fn(shots, titles, **ai_kwargs)
     return meta, shots, pack
 
 

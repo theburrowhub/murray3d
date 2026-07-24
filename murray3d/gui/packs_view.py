@@ -21,6 +21,8 @@ def build_packs_view(client, settings):
         QVBoxLayout, QWidget,
     )
 
+    from .publish_dialog import build_model_combo, combo_model
+
     pool = QThreadPool.globalInstance()
     root = QWidget(); outer = QVBoxLayout(root)
 
@@ -55,10 +57,14 @@ def build_packs_view(client, settings):
     status = QLabel("")
     btns = QHBoxLayout()
     btn_save = QPushButton("Guardar")
+    pack_model_combo = build_model_combo()
     btn_ai = QPushButton("Publicar con IA")
     btn_delete = QPushButton("Borrar")
-    for b in (btn_save, btn_ai, btn_delete):
-        btns.addWidget(b)
+    btns.addWidget(btn_save)
+    btns.addStretch()
+    btns.addWidget(pack_model_combo)
+    btns.addWidget(btn_ai)
+    btns.addWidget(btn_delete)
     rl.addLayout(btns); rl.addWidget(status)
     split.addWidget(right); split.setSizes([300, 700])
 
@@ -209,7 +215,8 @@ def build_packs_view(client, settings):
             state["select_pack_id"] = p.id
             refresh()
 
-        open_pack_publish_dialog(root, client, settings, p.id, on_done=done)
+        open_pack_publish_dialog(root, client, settings, p.id, on_done=done,
+                                 model=combo_model(pack_model_combo))
 
     btn_new.clicked.connect(new_pack)
     btn_refresh.clicked.connect(refresh)

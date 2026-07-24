@@ -77,7 +77,7 @@ def _cleanup_workdir(settings, model_id) -> None:
 
 
 def batch_ai_publish(client, settings, model_ids, on_progress=None, cleanup=True,
-                     prepare_fn=None, commit_fn=None) -> list[dict]:
+                     prepare_fn=None, commit_fn=None, model=None) -> list[dict]:
     """Ejecuta el flujo completo de "Publicar con IA" para cada modelo del lote.
 
     Secuencial. Tras cada modelo borra sus temporales (glb descargado +
@@ -93,7 +93,8 @@ def batch_ai_publish(client, settings, model_ids, on_progress=None, cleanup=True
         if on_progress:
             on_progress(i, total, mid, "publicando")
         try:
-            meta, shots = prepare_fn(client, settings, mid)
+            prep_kwargs = {"model": model} if model is not None else {}
+            meta, shots = prepare_fn(client, settings, mid, **prep_kwargs)
             m = commit_fn(client, mid, meta, shots)
             results.append({"id": mid, "ok": True, "title": m.title})
         except Exception as e:  # noqa: BLE001

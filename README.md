@@ -83,6 +83,10 @@ La lista muestra **solo tus modelos** (publicados y borradores).
    título, descripción, tags, categoría, precio y el mejor pantallazo de miniatura.
 3. Revisas/editas y pulsas **Publicar** → `PATCH published:true` + miniatura.
 
+Junto a cada botón **Publicar con IA** (modelos, packs y "Publicar borradores con
+IA") hay un **desplegable** para elegir con qué modelo de Claude lanzar la
+publicación: por defecto, `opus`, `sonnet`, `haiku` o `fable`.
+
 ### Packs
 
 - **Nuevo pack** / editar: título, descripción, tags, precio y casilla
@@ -108,12 +112,12 @@ murray3d models edit <id> [--title …] [--tags …] [--price …] [--published/
 murray3d models thumbnail <id> <imagen.png>
 murray3d models delete <id> --yes
 murray3d render <id> [--angles N]    # descarga + genera pantallazos, imprime rutas
-murray3d ai-generate <id>            # pantallazos + metadatos propuestos (JSON)
-murray3d ai-publish <id> [--yes]     # genera, (confirma) y publica
+murray3d ai-generate <id> [--model haiku]        # pantallazos + metadatos propuestos (JSON)
+murray3d ai-publish <id> [--yes] [--model opus]  # genera, (confirma) y publica
 
 # Lotes (soportan >1GB: streaming + secuencial + limpieza de temporales)
 murray3d batch-upload <ruta…> [--json]          # sube todos los .glb/.obj/.stl como borrador
-murray3d batch-ai-publish [ids…] [--all-drafts] [--yes]   # publica con IA un lote entero
+murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model sonnet]   # publica con IA un lote
 murray3d packs list|show|create|edit|delete
 murray3d packs add-model <pack_id> <model_id…>
 murray3d gui                         # abre la app

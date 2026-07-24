@@ -13,7 +13,7 @@ def build_models_view(client, settings):
         QVBoxLayout, QWidget,
     )
 
-    from .publish_dialog import open_publish_dialog
+    from .publish_dialog import build_model_combo, combo_model, open_publish_dialog
     from .viewer import build_viewer_widget
 
     ModelViewer = build_viewer_widget()
@@ -28,11 +28,13 @@ def build_models_view(client, settings):
     btn_search = QPushButton("Buscar")
     btn_new = QPushButton("＋ Nuevo modelo…")
     btn_batch = QPushButton("Subir por lotes…")
+    batch_model_combo = build_model_combo()
     btn_batch_ai = QPushButton("Publicar borradores con IA")
     btn_refresh = QPushButton("Recargar")
     top.addWidget(search); top.addWidget(btn_search)
     top.addStretch()
-    top.addWidget(btn_new); top.addWidget(btn_batch); top.addWidget(btn_batch_ai)
+    top.addWidget(btn_new); top.addWidget(btn_batch)
+    top.addWidget(batch_model_combo); top.addWidget(btn_batch_ai)
     top.addWidget(btn_refresh)
     outer.addLayout(top)
 
@@ -72,9 +74,13 @@ def build_models_view(client, settings):
     btn_save = QPushButton("Guardar cambios")
     btn_thumb = QPushButton("Miniatura…")
     btn_delete = QPushButton("Borrar")
+    edit_model_combo = build_model_combo()
     btn_ai = QPushButton("Publicar con IA")
-    for b in (btn_save, btn_thumb, btn_delete, btn_ai):
+    for b in (btn_save, btn_thumb, btn_delete):
         eb.addWidget(b)
+    eb.addStretch()
+    eb.addWidget(edit_model_combo)
+    eb.addWidget(btn_ai)
     rl.addWidget(edit_box)
 
     status = QLabel("")
@@ -235,7 +241,8 @@ def build_models_view(client, settings):
             state["select_id"] = m.id
             refresh()
 
-        open_publish_dialog(root, client, settings, m.id, on_done=done)
+        open_publish_dialog(root, client, settings, m.id, on_done=done,
+                            model=combo_model(edit_model_combo))
 
     # ---------------- crear (flujo separado) ----------------
     def new_model():
@@ -341,9 +348,11 @@ def build_models_view(client, settings):
         from ..batch import batch_ai_publish
         _set_batch_enabled(False)
 
+        chosen_model = combo_model(batch_model_combo)
+
         def _do():
             return batch_ai_publish(
-                client, settings, ids,
+                client, settings, ids, model=chosen_model,
                 on_progress=lambda i, t, mid, ph: prog.tick.emit(
                     f"[{i + 1}/{t}] {ph} modelo {mid}…"))
 

@@ -45,13 +45,13 @@ murray3d models delete <id> --yes
 
 # Render + IA (modelos)
 murray3d render <id> [--angles N]    # descarga + pantallazos, imprime rutas JSON
-murray3d ai-generate <id>            # render + metadatos propuestos (JSON: {meta, shots})
-murray3d ai-publish <id> [--yes]     # ai-generate + (confirmar) + PATCH published:true + miniatura
+murray3d ai-generate <id> [--model opus|sonnet|haiku|fable]   # render + metadatos (JSON: {meta, shots})
+murray3d ai-publish <id> [--yes] [--model …]   # ai-generate + (confirmar) + publicar + miniatura
 
 # Lotes (pensados para muchos recursos / >1GB: streaming, secuencial,
 # limpieza de temporales por modelo, y continúan ante errores por elemento)
 murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo como borrador
-murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--json]
+murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model …] [--json]
 
 # Packs
 murray3d packs list [--json]
@@ -64,6 +64,11 @@ murray3d packs delete <id> --yes
 
 Salida `--json` en los comandos de consulta; código de salida ≠ 0 ante error
 (`ApiError`, `ConfigError`, `RenderError`, `AiError`, `ConvertError`).
+
+`--model` (en `ai-generate`, `ai-publish`, `batch-ai-publish`) elige el modelo de
+Claude: alias `opus|sonnet|haiku|fable` o nombre completo. Sin él, usa el modelo
+por defecto del CLI `claude`. En la GUI hay un desplegable equivalente junto a
+cada botón "Publicar con IA".
 
 ## Recetas típicas
 

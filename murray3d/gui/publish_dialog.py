@@ -2,8 +2,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..ai import CLAUDE_MODEL_ALIASES
 from ..models import GeneratedMeta, GeneratedPackMeta
 from .workers import make_worker
+
+
+def build_model_combo():
+    """QComboBox para elegir el modelo de Claude usado en 'Publicar con IA'.
+
+    El primer elemento ('por defecto') deja que decida el CLI de claude.
+    """
+    from PySide6.QtWidgets import QComboBox
+    combo = QComboBox()
+    combo.addItem("Claude: por defecto", "")
+    for alias in CLAUDE_MODEL_ALIASES:
+        combo.addItem(f"Claude: {alias}", alias)
+    combo.setToolTip("Modelo de Claude con el que lanzar la publicación")
+    return combo
+
+
+def combo_model(combo):
+    """Devuelve el alias elegido (o None si es 'por defecto')."""
+    return combo.currentData() or None
 
 
 def meta_from_form(title, description, tags_text, category, price) -> GeneratedMeta:
@@ -29,7 +49,7 @@ def pack_meta_from_form(title, description, tags_text, price) -> GeneratedPackMe
     )
 
 
-def open_publish_dialog(parent, client, settings, model_id, on_done):
+def open_publish_dialog(parent, client, settings, model_id, on_done, model=None):
     from PySide6.QtCore import Qt, QThreadPool, QSize
     from PySide6.QtGui import QIcon, QPixmap
     from PySide6.QtWidgets import (
@@ -96,7 +116,7 @@ def open_publish_dialog(parent, client, settings, model_id, on_done):
         QMessageBox.critical(dlg, "Error generando metadatos", msg)
         dlg.reject()
 
-    w = make_worker(lambda: prepare_publish(client, settings, model_id))
+    w = make_worker(lambda: prepare_publish(client, settings, model_id, model=model))
     w.signals.finished.connect(on_prepared)
     w.signals.failed.connect(on_failed)
     pool.start(w)
@@ -120,7 +140,7 @@ def open_publish_dialog(parent, client, settings, model_id, on_done):
     dlg.exec()
 
 
-def open_pack_publish_dialog(parent, client, settings, pack_id, on_done):
+def open_pack_publish_dialog(parent, client, settings, pack_id, on_done, model=None):
     """'Publicar con IA' para un pack: genera título/descr/tags/precio del bundle
     a partir de una imagen de cada modelo incluido, para revisar y publicar."""
     from PySide6.QtCore import QSize, Qt, QThreadPool
@@ -182,7 +202,7 @@ def open_pack_publish_dialog(parent, client, settings, pack_id, on_done):
         QMessageBox.critical(dlg, "Error generando metadatos del pack", msg)
         dlg.reject()
 
-    w = make_worker(lambda: prepare_pack_publish(client, settings, pack_id))
+    w = make_worker(lambda: prepare_pack_publish(client, settings, pack_id, model=model))
     w.signals.finished.connect(on_prepared)
     w.signals.failed.connect(on_failed)
     pool.start(w)
