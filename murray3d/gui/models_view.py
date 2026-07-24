@@ -6,7 +6,7 @@ from .workers import make_worker
 
 
 def build_models_view(client, settings):
-    from PySide6.QtCore import Qt, QThreadPool
+    from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
     from PySide6.QtWidgets import (
         QApplication, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
         QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSplitter, QTextEdit,
@@ -27,9 +27,13 @@ def build_models_view(client, settings):
     search = QLineEdit(); search.setPlaceholderText("Buscar en mis modelos…")
     btn_search = QPushButton("Buscar")
     btn_new = QPushButton("＋ Nuevo modelo…")
+    btn_batch = QPushButton("Subir por lotes…")
+    btn_batch_ai = QPushButton("Publicar borradores con IA")
     btn_refresh = QPushButton("Recargar")
     top.addWidget(search); top.addWidget(btn_search)
-    top.addStretch(); top.addWidget(btn_new); top.addWidget(btn_refresh)
+    top.addStretch()
+    top.addWidget(btn_new); top.addWidget(btn_batch); top.addWidget(btn_batch_ai)
+    top.addWidget(btn_refresh)
     outer.addLayout(top)
 
     split = QSplitter(Qt.Horizontal)
@@ -103,6 +107,15 @@ def build_models_view(client, settings):
         w.signals.finished.connect(_ok)
         w.signals.failed.connect(_fail)
         pool.start(w)
+
+    # Emisor de progreso para lotes: la señal se emite desde el hilo worker y se
+    # entrega (en cola) al hilo principal, donde actualiza el estado.
+    class _Prog(QObject):
+        tick = Signal(str)
+
+    prog = _Prog()
+    prog.tick.connect(set_status)
+    state["_prog"] = prog  # mantener referencia viva
 
     def set_mode(mode, header_text=""):
         """mode: 'empty' | 'new' | 'edit'. Muestra/oculta lo relevante."""
@@ -280,10 +293,79 @@ def build_models_view(client, settings):
         set_mode("empty", "Selecciona un modelo de la lista o pulsa «＋ Nuevo modelo…».")
         set_status("Creación cancelada.")
 
+    # ---------------- lotes ----------------
+    def _set_batch_enabled(on):
+        for b in (btn_new, btn_batch, btn_batch_ai, btn_refresh):
+            b.setEnabled(on)
+
+    def batch_upload_files():
+        paths, _ = QFileDialog.getOpenFileNames(
+            root, "Elegir modelos para subir por lotes", "",
+            "Modelos 3D (*.glb *.obj *.stl)")
+        if not paths:
+            return
+        from ..batch import batch_upload
+        files = [Path(p) for p in paths]
+        _set_batch_enabled(False)
+
+        def _do():
+            return batch_upload(
+                client, files,
+                on_progress=lambda i, t, name, ph: prog.tick.emit(f"[{i + 1}/{t}] {ph}: {name}"))
+
+        def _ok(results):
+            _set_batch_enabled(True)
+            ok = [r for r in results if r["ok"]]
+            fail = [r for r in results if not r["ok"]]
+            msg = f"Subidos como borrador: {len(ok)}.  Errores: {len(fail)}."
+            if fail:
+                msg += "\n\n" + "\n".join(f"• {r['file']}: {r['error']}" for r in fail[:10])
+            QMessageBox.information(root, "Subida por lotes", msg)
+            refresh()
+
+        run_bg(_do, _ok, f"Subiendo {len(files)} ficheros por lotes…",
+               on_error=lambda: _set_batch_enabled(True))
+
+    def batch_publish_drafts():
+        drafts = [m for m in state["models"] if not m.published]
+        if not drafts:
+            QMessageBox.information(root, "Publicar con IA",
+                                    "No tienes borradores que publicar.")
+            return
+        ids = [m.id for m in drafts]
+        if QMessageBox.question(
+                root, "Publicar borradores con IA",
+                f"Se publicarán con IA {len(ids)} borradores (render + Claude por cada "
+                f"uno). Puede tardar. ¿Continuar?") != QMessageBox.Yes:
+            return
+        from ..batch import batch_ai_publish
+        _set_batch_enabled(False)
+
+        def _do():
+            return batch_ai_publish(
+                client, settings, ids,
+                on_progress=lambda i, t, mid, ph: prog.tick.emit(
+                    f"[{i + 1}/{t}] {ph} modelo {mid}…"))
+
+        def _ok(results):
+            _set_batch_enabled(True)
+            ok = [r for r in results if r["ok"]]
+            fail = [r for r in results if not r["ok"]]
+            msg = f"Publicados: {len(ok)}.  Errores: {len(fail)}."
+            if fail:
+                msg += "\n\n" + "\n".join(f"• modelo {r['id']}: {r['error']}" for r in fail[:10])
+            QMessageBox.information(root, "Publicar borradores con IA", msg)
+            refresh()
+
+        run_bg(_do, _ok, f"Publicando {len(ids)} borradores con IA…",
+               on_error=lambda: _set_batch_enabled(True))
+
     btn_refresh.clicked.connect(refresh)
     btn_search.clicked.connect(refresh)
     search.returnPressed.connect(refresh)
     btn_new.clicked.connect(new_model)
+    btn_batch.clicked.connect(batch_upload_files)
+    btn_batch_ai.clicked.connect(batch_publish_drafts)
     btn_upload_confirm.clicked.connect(confirm_upload)
     btn_cancel_new.clicked.connect(cancel_new)
     listw.currentItemChanged.connect(lambda *_: load_selected())

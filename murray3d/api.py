@@ -111,11 +111,20 @@ class Client:
             data["tags"] = ",".join(tags)
         if price_eur is not None:
             data["price_eur"] = str(price_eur)
-        files = {"file": (file.name, file.read_bytes())}
-        if thumbnail is not None:
-            thumbnail = Path(thumbnail)
-            files["thumbnail"] = (thumbnail.name, thumbnail.read_bytes())
-        resp = self._request("POST", "/models", data=data, files=files)
+        # Streaming: se pasan handles de fichero (no bytes) para no cargar el
+        # modelo en memoria; timeout=None para transferencias grandes (>1GB).
+        handles = []
+        try:
+            fh = open(file, "rb"); handles.append(fh)
+            files = {"file": (file.name, fh, "application/octet-stream")}
+            if thumbnail is not None:
+                thumbnail = Path(thumbnail)
+                th = open(thumbnail, "rb"); handles.append(th)
+                files["thumbnail"] = (thumbnail.name, th, "application/octet-stream")
+            resp = self._request("POST", "/models", data=data, files=files, timeout=None)
+        finally:
+            for h in handles:
+                h.close()
         return Model3D.model_validate(resp.json())
 
     def update_model(self, model_id: int, **fields) -> Model3D:
@@ -131,18 +140,21 @@ class Client:
 
     def set_thumbnail(self, model_id: int, image: Path) -> Model3D:
         image = Path(image)
-        files = {"thumbnail": (image.name, image.read_bytes())}
-        resp = self._request("POST", f"/models/{model_id}/thumbnail", files=files)
+        with open(image, "rb") as fh:
+            files = {"thumbnail": (image.name, fh, "application/octet-stream")}
+            resp = self._request("POST", f"/models/{model_id}/thumbnail", files=files)
         return Model3D.model_validate(resp.json())
 
     def download_model(self, model_id: int, dest: Path) -> Path:
+        # Streaming a disco por chunks: no carga el fichero en memoria (>1GB ok).
         dest = Path(dest)
-        with self._http.stream("GET", f"/models/{model_id}/download") as r:
+        with self._http.stream("GET", f"/models/{model_id}/download", timeout=None) as r:
             if r.status_code >= 400:
                 r.read()
                 self._raise_for_status(r)
-            body = r.read()
-        dest.write_bytes(body)
+            with open(dest, "wb") as f:
+                for chunk in r.iter_bytes(chunk_size=1024 * 1024):
+                    f.write(chunk)
         return dest
 
     def list_packs(self, q=None, only_published=None, limit=100, offset=0) -> list[Pack]:

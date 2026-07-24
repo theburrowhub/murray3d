@@ -70,6 +70,10 @@ La lista muestra **solo tus modelos** (publicados y borradores).
 - **Crear** (`＋ Nuevo modelo…`): eliges un `.glb/.obj/.stl`, se **previsualiza
   en 3D localmente** y no se sube nada; pulsa **«Subir como borrador»** para
   confirmar (o «Cancelar»).
+- **Subir por lotes…**: seleccionas varios ficheros y se suben todos como
+  borrador, de uno en uno y por streaming (soporta lotes de **>1GB**).
+- **Publicar borradores con IA**: ejecuta el flujo completo (render + Claude +
+  publicar) para **todos tus borradores** de una vez.
 - **Editar**: selecciona un modelo de la lista para ver su visor 3D y sus
   metadatos, con **Guardar cambios / Miniatura… / Borrar / Publicar con IA**.
 
@@ -106,6 +110,10 @@ murray3d models delete <id> --yes
 murray3d render <id> [--angles N]    # descarga + genera pantallazos, imprime rutas
 murray3d ai-generate <id>            # pantallazos + metadatos propuestos (JSON)
 murray3d ai-publish <id> [--yes]     # genera, (confirma) y publica
+
+# Lotes (soportan >1GB: streaming + secuencial + limpieza de temporales)
+murray3d batch-upload <ruta…> [--json]          # sube todos los .glb/.obj/.stl como borrador
+murray3d batch-ai-publish [ids…] [--all-drafts] [--yes]   # publica con IA un lote entero
 murray3d packs list|show|create|edit|delete
 murray3d packs add-model <pack_id> <model_id…>
 murray3d gui                         # abre la app

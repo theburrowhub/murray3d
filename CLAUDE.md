@@ -48,6 +48,11 @@ murray3d render <id> [--angles N]    # descarga + pantallazos, imprime rutas JSO
 murray3d ai-generate <id>            # render + metadatos propuestos (JSON: {meta, shots})
 murray3d ai-publish <id> [--yes]     # ai-generate + (confirmar) + PATCH published:true + miniatura
 
+# Lotes (pensados para muchos recursos / >1GB: streaming, secuencial,
+# limpieza de temporales por modelo, y continúan ante errores por elemento)
+murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo como borrador
+murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--json]
+
 # Packs
 murray3d packs list [--json]
 murray3d packs show <id>
@@ -73,6 +78,15 @@ murray3d ai-generate <id>          # inspecciona el JSON {meta, shots}
 murray3d models edit <id> --title "…" --tags a,b --price 4.99 --published
 murray3d models thumbnail <id> <shots[best]>
 ```
+
+**Subir y publicar un lote entero (aunque sean >1GB):**
+```bash
+murray3d batch-upload ./mi_carpeta_de_minis   # sube todo como borrador
+murray3d batch-ai-publish --all-drafts --yes  # genera metadatos y publica cada uno
+```
+Se procesa de uno en uno (streaming, sin cargar ficheros enteros en memoria) y
+se limpian los temporales de cada modelo tras publicarlo, así que el tamaño
+total del lote no es un problema.
 
 **Crear y publicar un pack:**
 ```bash

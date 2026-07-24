@@ -235,6 +235,78 @@ def ai_publish(model_id: int, yes: bool = typer.Option(False, "--yes")):
         _dump(m.model_dump())
 
 
+@app.command("batch-upload")
+def batch_upload_cmd(paths: list[Path],
+                     json_out: bool = typer.Option(False, "--json")):
+    """Sube por lotes todos los .glb/.obj/.stl de las rutas dadas (ficheros o
+    carpetas) como BORRADOR. Procesa de uno en uno y por streaming (soporta
+    lotes de >1GB). Un error en un fichero no aborta el lote."""
+    from .batch import batch_upload, collect_files
+    files = collect_files(paths)
+    if not files:
+        typer.echo("No se encontraron ficheros .glb/.obj/.stl en las rutas dadas.")
+        raise typer.Exit(code=1)
+    with _session() as c:
+        typer.echo(f"Subiendo {len(files)} ficheros como borrador…")
+
+        def prog(i, total, name, phase):
+            typer.echo(f"  [{i + 1}/{total}] {phase}: {name}")
+
+        results = batch_upload(c, files, on_progress=prog)
+        ok = [r for r in results if r["ok"]]
+        fail = [r for r in results if not r["ok"]]
+        if json_out:
+            _dump(results)
+        else:
+            typer.echo(f"Hecho: {len(ok)} subidos, {len(fail)} con error.")
+            for r in ok:
+                typer.echo(f"  ✔ [{r['id']}] {r['file']}")
+            for r in fail:
+                typer.echo(f"  ✗ ERROR {r['file']}: {r['error']}")
+        if fail:
+            raise typer.Exit(code=1)
+
+
+@app.command("batch-ai-publish")
+def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
+                         all_drafts: bool = typer.Option(False, "--all-drafts"),
+                         yes: bool = typer.Option(False, "--yes"),
+                         json_out: bool = typer.Option(False, "--json")):
+    """Ejecuta el flujo completo "Publicar con IA" para un lote de modelos.
+
+    Pasa IDs, o usa --all-drafts para tomar todos tus borradores. Secuencial;
+    limpia los temporales de cada modelo tras publicarlo."""
+    from .batch import batch_ai_publish
+    with _session() as c:
+        ids = list(model_ids or [])
+        if all_drafts:
+            mine = _run(lambda: c.list_models(only_published=False, mine=True, limit=200))
+            ids = [m.id for m in mine if not m.published]
+        if not ids:
+            typer.echo("No hay modelos que publicar (pasa IDs o usa --all-drafts).")
+            raise typer.Exit(code=1)
+        typer.echo(f"Se publicarán con IA {len(ids)} modelos: {ids}")
+        if not yes:
+            typer.confirm("¿Continuar?", abort=True)
+
+        def prog(i, total, mid, phase):
+            typer.echo(f"  [{i + 1}/{total}] {phase} modelo {mid}…")
+
+        results = batch_ai_publish(c, c.settings, ids, on_progress=prog)
+        ok = [r for r in results if r["ok"]]
+        fail = [r for r in results if not r["ok"]]
+        if json_out:
+            _dump(results)
+        else:
+            typer.echo(f"Hecho: {len(ok)} publicados, {len(fail)} con error.")
+            for r in ok:
+                typer.echo(f"  ✔ [{r['id']}] {r['title']}")
+            for r in fail:
+                typer.echo(f"  ✗ ERROR modelo {r['id']}: {r['error']}")
+        if fail:
+            raise typer.Exit(code=1)
+
+
 @app.command()
 def gui():
     from .gui.app import run_gui
