@@ -1,9 +1,37 @@
 # murray3d
 
-Cliente local (macOS) para [3DBundle](https://murrayslab.com/3dbundle): gestor de
-modelos y packs 3D + publicación asistida por Claude Code.
+Cliente local (macOS) para [3DBundle](https://murrayslab.com/3dbundle): una app
+de escritorio (PySide6) y un CLI para **gestionar tus modelos y packs 3D** y
+**publicarlos con metadatos generados por Claude Code** a partir de pantallazos
+de cada mini.
+
+- **App de escritorio** con visor 3D, gestión de modelos y packs.
+- **Publicar con IA**: la app renderiza imágenes del modelo y `claude` propone
+  título, descripción, tags, categoría, precio y miniatura; tú revisas y publicas.
+- **Núcleo scriptable** (`murray3d …`): el mismo motor por línea de comandos.
+
+Repo: <https://github.com/Muriano/murray3d>
+
+---
+
+## Requisitos
+
+- Python 3.11+ y macOS.
+- El CLI **`claude`** (Claude Code) instalado en el `PATH` y autenticado — es lo
+  que genera los metadatos en el flujo "Publicar con IA".
+- Una **API key de 3DBundle**.
 
 ## Instalación
+
+```bash
+git clone git@github.com:Muriano/murray3d.git
+cd murray3d
+make setup          # crea .venv, instala deps + Chromium de Playwright + model-viewer
+cp .env.dist .env   # edita .env y pon tu MURRAY_API_KEY
+make run            # arranca la app
+```
+
+`make setup` equivale a:
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -12,50 +40,103 @@ python -m playwright install chromium
 python -m murray3d.gui.assets.download_model_viewer
 ```
 
-Configura tu API key: copia la plantilla y rellénala (o exporta `MURRAY_API_KEY`).
+La API key se lee de `.env` (`MURRAY_API_KEY=…`) o de la variable de entorno
+`MURRAY_API_KEY`. `.env` está en `.gitignore` y nunca se sube.
+
+## Uso con `make`
 
 ```bash
-cp .env.dist .env   # luego edita .env y pon tu MURRAY_API_KEY
+make run          # abre la GUI (carga .env automáticamente)
+make whoami       # comprueba la autenticación
+make models       # lista tus modelos
+make packs        # lista tus packs
+make cli ARGS="models show 10"
+make test         # tests unitarios
+make test-integration   # render real con Chromium (lento)
 ```
 
-`.env` está en `.gitignore`. `make run` la carga automáticamente.
+---
 
-## GUI
+## La app
 
-```bash
-murray3d gui
-```
+Dos pestañas: **Modelos** y **Packs**. Nada llega a la tienda hasta que lo
+confirmas: todo se sube/crea como **borrador** (`○`) y solo pasa a **publicado**
+(`✔`) cuando tú lo decides.
 
-Pestañas **Modelos** (listar, ver en 3D, subir, editar, borrar, miniatura,
-**Publicar con IA**) y **Packs** (crear, editar, borrar, gestionar model_ids).
+### Modelos
 
-### Flujo "Publicar con IA"
-1. Selecciona un modelo → **Publicar con IA**.
-2. La app renderiza 6 pantallazos y llama a `claude` para proponer título,
-   descripción, tags, categoría, precio y mejor miniatura.
-3. Revisa/edita y pulsa **Publicar** (PATCH `published:true` + miniatura).
+La lista muestra **solo tus modelos** (publicados y borradores).
 
-Requiere el CLI `claude` en el PATH y autenticado.
+- **Crear** (`＋ Nuevo modelo…`): eliges un `.glb/.obj/.stl`, se **previsualiza
+  en 3D localmente** y no se sube nada; pulsa **«Subir como borrador»** para
+  confirmar (o «Cancelar»).
+- **Editar**: selecciona un modelo de la lista para ver su visor 3D y sus
+  metadatos, con **Guardar cambios / Miniatura… / Borrar / Publicar con IA**.
+
+**Publicar con IA (modelo):**
+1. Con un modelo seleccionado → **Publicar con IA**.
+2. La app renderiza varios pantallazos en órbita y llama a `claude`, que propone
+   título, descripción, tags, categoría, precio y el mejor pantallazo de miniatura.
+3. Revisas/editas y pulsas **Publicar** → `PATCH published:true` + miniatura.
+
+### Packs
+
+- **Nuevo pack** / editar: título, descripción, tags, precio y casilla
+  **«Publicado»**.
+- Los modelos del pack se eligen **marcando casillas** en la lista de modelos
+  (incluye borradores), no escribiendo IDs.
+- **Publicar con IA (pack):** con un pack guardado y con modelos, pulsa
+  **Publicar con IA** → renderiza una imagen de cada modelo del pack y `claude`
+  genera **título, descripción, tags y precio del bundle**; revisas y publicas.
+
+---
 
 ## CLI (y uso por Claude Code)
 
+El mismo núcleo por línea de comandos (usa `.venv/bin/murray3d` o `make cli`):
+
 ```bash
 murray3d whoami
-murray3d models list [--json] [--q dragon] [--mine]
+murray3d models list [--json] [--q dragon] [--mine] [--published/--all]
 murray3d models show <id>
-murray3d models upload <fichero.glb> "<título>" [--tags a,b] [--category both]
-murray3d models edit <id> [--title ...] [--published/--unpublished]
-murray3d models delete <id> --yes
+murray3d models upload <fichero.glb> "<título>" [--tags a,b] [--category both] [--price 4.99]
+murray3d models edit <id> [--title …] [--tags …] [--price …] [--published/--unpublished]
 murray3d models thumbnail <id> <imagen.png>
-murray3d render <id>                 # genera pantallazos, imprime rutas
+murray3d models delete <id> --yes
+murray3d render <id> [--angles N]    # descarga + genera pantallazos, imprime rutas
 murray3d ai-generate <id>            # pantallazos + metadatos propuestos (JSON)
 murray3d ai-publish <id> [--yes]     # genera, (confirma) y publica
-murray3d packs list|show|create|edit|delete|add-model
+murray3d packs list|show|create|edit|delete
+murray3d packs add-model <pack_id> <model_id…>
+murray3d gui                         # abre la app
 ```
+
+Todos los subcomandos de consulta aceptan `--json` y devuelven código de salida
+no-cero ante error.
+
+> Nota: la descarga del fichero de un modelo (para renderizar) requiere ser el
+> **propietario** del modelo; los modelos de otras cuentas están protegidos.
+
+---
 
 ## Tests
 
 ```bash
-pytest                 # unitarios (rápidos)
-pytest -m integration  # requiere Chromium de Playwright (render real)
+make test                # unitarios (rápidos, sin red ni Chromium)
+make test-integration    # render real con el Chromium de Playwright
+```
+
+## Arquitectura (resumen)
+
+```
+murray3d/
+  config.py     carga de .env / MURRAY_API_KEY, rutas de caché
+  api.py        cliente HTTP de la API de 3DBundle (errores tipados)
+  models.py     modelos de datos (Model3D, Pack, GeneratedMeta, GeneratedPackMeta)
+  convert.py    obj/stl -> glb (trimesh), con caché
+  render.py     pantallazos con Playwright + model-viewer (servido por HTTP local)
+  ai.py         invoca `claude -p` para generar metadatos (modelo y pack)
+  publish.py    orquestación: descargar -> render -> IA -> publicar
+  cli.py        CLI (typer)
+  gui/          app PySide6 (visor, gestor de modelos y packs, diálogos de IA)
 ```
