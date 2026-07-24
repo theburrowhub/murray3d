@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html, body { margin: 0; height: 100%; background: #1b1d22; }
+  model-viewer { width: 100vw; height: 100vh; --poster-color: transparent; }
+</style>
+<script type="module" src="./model-viewer.min.js"></script>
+</head>
+<body>
+<model-viewer id="mv" camera-controls interaction-prompt="none"
+              shadow-intensity="1" exposure="1" environment-image="neutral"></model-viewer>
+<script>
+  const mv = document.getElementById('mv');
+  const params = new URLSearchParams(location.search);
+  const src = params.get('src');
+  if (src) mv.src = src;
+
+  window.setModelSrc = (s) => { mv.src = s; };
+
+  // Espera a que el modelo cargue.
+  window.modelReady = new Promise((resolve) => {
+    mv.addEventListener('load', () => resolve(true), { once: true });
+  });
+
+  // Fija la cámara y captura un PNG. theta/phi en grados, radius en metros o 'auto'.
+  window.captureOrbit = async (theta, phi, radius) => {
+    mv.cameraOrbit = `${theta}deg ${phi}deg ${radius}`;
+    mv.jumpCameraToGoal ? mv.jumpCameraToGoal() : null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return mv.toDataURL('image/png');
+  };
+</script>
+</body>
+</html>

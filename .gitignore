@@ -1,0 +1,27 @@
+# Secretos
+key.txt
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Datos de trabajo / cachés
+.cache/
+*.glb.cache
+screenshots/
+.murray3d/
+
+# Datos de sesión / scratch (privados)
+.remember/
+.superpowers/
+
+# SO / editor
+.DS_Store
+.idea/
+.vscode/
