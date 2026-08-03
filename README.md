@@ -1,6 +1,6 @@
 # murray3d
 
-Cliente local (macOS) para [3DBundle](https://murrayslab.com/3dbundle): una app
+Cliente local (macOS/Linux) para [3DBundle](https://murrayslab.com/3dbundle): una app
 de escritorio (PySide6) y un CLI para **gestionar tus modelos y packs 3D** y
 **publicarlos con metadatos generados por Claude Code** a partir de pantallazos
 de cada mini.
@@ -10,21 +10,27 @@ de cada mini.
   título, descripción, tags, categoría, precio y miniatura; tú revisas y publicas.
 - **Núcleo scriptable** (`murray3d …`): el mismo motor por línea de comandos.
 
-Repo: <https://github.com/Muriano/murray3d>
+Repo: <https://github.com/theburrowhub/murray3d>
 
 ---
 
 ## Requisitos
 
-- Python 3.11+ y macOS.
+- Python 3.11+ (probado hasta 3.14) en macOS o Linux.
 - El CLI **`claude`** (Claude Code) instalado en el `PATH` y autenticado — es lo
   que genera los metadatos en el flujo "Publicar con IA".
 - Una **API key de 3DBundle**.
 
+> Verificado en Linux (Ubuntu) con Python 3.14: `make setup`, los tests
+> unitarios (63) y el test de integración de render real (Chromium + Playwright)
+> pasan sin cambios. En Linux, Playwright puede necesitar librerías de sistema
+> para Chromium (`libnss3`, `libgbm1`, `libasound2`, …); si faltan, instálalas
+> con `python -m playwright install-deps chromium`.
+
 ## Instalación
 
 ```bash
-git clone git@github.com:Muriano/murray3d.git
+git clone git@github.com:theburrowhub/murray3d.git
 cd murray3d
 make setup          # crea .venv, instala deps + Chromium de Playwright + model-viewer
 cp .env.dist .env   # edita .env y pon tu MURRAY_API_KEY
