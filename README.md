@@ -18,8 +18,10 @@ Repo: <https://github.com/theburrowhub/murray3d>
 
 - Python 3.11+ (probado hasta 3.14) en macOS o Linux.
 - El CLI **`claude`** (Claude Code) instalado en el `PATH` y autenticado — es lo
-  que genera los metadatos en el flujo "Publicar con IA".
+  que genera los metadatos en el flujo "Publicar con IA" (y el backend `agent` de
+  autogeneración).
 - Una **API key de 3DBundle**.
+- (Opcional, solo para autogeneración) una **API key de Freepik** (`FREEPIK_API_KEY`).
 
 > Verificado en Linux (Ubuntu) con Python 3.14: `make setup`, los tests
 > unitarios (63) y el test de integración de render real (Chromium + Playwright)
@@ -105,6 +107,28 @@ publicación: por defecto, `opus`, `sonnet`, `haiku` o `fable`.
 
 ---
 
+## Autogeneración desde JSON de prompts (Freepik)
+
+Genera imágenes de miniaturas **en serie** a partir de un JSON con cientos de
+prompts, usando **Freepik**. Pensado para lotes grandes (uno a uno, `manifest.json`
+reanudable, continúa ante errores). Guía completa en [`docs/autogen.md`](docs/autogen.md).
+
+- Necesita una **API key de Freepik** (`FREEPIK_API_KEY` en `.env`). Obténla en
+  <https://www.freepik.com/developers/dashboard>.
+- Dos backends: `rest` (API directa; ideal para cientos en serie) y `agent`
+  (`claude` + **MCP de Freepik** como agente simple).
+- **Nota 3D:** la API de Freepik **solo genera imágenes**, no malla `.glb`. Esta
+  fase autogenera las imágenes de referencia; el paso image-to-3D queda para una
+  fase posterior (3D Generator web de Freepik, o Tripo/Meshy).
+
+```bash
+murray3d autogen-validate examples/prompts-miniaturas.sample.json   # inspecciona
+murray3d autogen-image "Miniature figure of Goku, 40mm base" out.jpg   # 1 imagen
+murray3d autogen examples/prompts-miniaturas.sample.json --limit 3 --seed 42
+```
+
+En la GUI hay una pestaña **Autogeneración** (cargar JSON → tabla → Generar).
+
 ## CLI (y uso por Claude Code)
 
 El mismo núcleo por línea de comandos (usa `.venv/bin/murray3d` o `make cli`):
@@ -155,6 +179,10 @@ murray3d/
   render.py     pantallazos con Playwright + model-viewer (servido por HTTP local)
   ai.py         invoca `claude -p` para generar metadatos (modelo y pack)
   publish.py    orquestación: descargar -> render -> IA -> publicar
+  prompts.py    modelos del JSON de prompts + convención de nombres (autogen)
+  freepik.py    cliente REST de Freepik (text-to-image async con polling)
+  agent_gen.py  backend "agente simple": `claude` + MCP de Freepik
+  autogen.py    orquestación por lotes (serie, reanudable, manifest)
   cli.py        CLI (typer)
-  gui/          app PySide6 (visor, gestor de modelos y packs, diálogos de IA)
+  gui/          app PySide6 (visor, gestor de modelos/packs, autogeneración)
 ```

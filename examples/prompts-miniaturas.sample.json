@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "total_prompts": 6,
+    "figures_count": 3,
+    "painting_style": ["Citadel", "Vallejo"],
+    "base_sizes": ["25mm", "32mm", "40mm", "50mm", "60mm", "70mm", "80mm"]
+  },
+  "figures": [
+    {
+      "group": "Dragon Ball",
+      "character": "Goku",
+      "prompts": [
+        {
+          "id": 1,
+          "variant": 1,
+          "title": "Kamehameha Cargando",
+          "base_size": "40mm",
+          "base_theme": "rocky_wasteland",
+          "painting_style": "Citadel",
+          "prompt": "Miniature figure of Goku from Dragon Ball, charging a Kamehameha with both hands cupped at his side, glowing blue energy, dynamic battle pose, orange gi, spiky black hair, on a 40mm rocky wasteland base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["anime", "dragon_ball", "goku", "kamehameha", "miniature"]
+        },
+        {
+          "id": 2,
+          "variant": 2,
+          "title": "Super Saiyan Pose",
+          "base_size": "40mm",
+          "base_theme": "rocky_wasteland",
+          "painting_style": "Citadel",
+          "prompt": "Miniature figure of Goku in Super Saiyan form, golden spiky hair, aura of yellow energy, muscular stance, torn orange gi, on a 40mm rocky base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["anime", "dragon_ball", "goku", "super_saiyan", "miniature"]
+        }
+      ]
+    },
+    {
+      "group": "Dragon Ball",
+      "character": "Vegeta",
+      "prompts": [
+        {
+          "id": 3,
+          "variant": 1,
+          "title": "Galick Gun",
+          "base_size": "40mm",
+          "base_theme": "rocky_wasteland",
+          "painting_style": "Vallejo",
+          "prompt": "Miniature figure of Vegeta from Dragon Ball, firing a purple Galick Gun beam, arms extended forward, blue Saiyan armor, proud expression, on a 40mm cracked ground base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["anime", "dragon_ball", "vegeta", "galick_gun", "miniature"]
+        },
+        {
+          "id": 4,
+          "variant": 2,
+          "title": "Arms Crossed",
+          "base_size": "32mm",
+          "base_theme": "flat_rock",
+          "painting_style": "Vallejo",
+          "prompt": "Miniature figure of Vegeta standing with arms crossed, confident smirk, blue and white Saiyan armor, white gloves and boots, on a 32mm flat rock base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["anime", "dragon_ball", "vegeta", "miniature"]
+        }
+      ]
+    },
+    {
+      "group": "Star Wars",
+      "character": "Darth Vader",
+      "prompts": [
+        {
+          "id": 5,
+          "variant": 1,
+          "title": "Lightsaber Ignited",
+          "base_size": "50mm",
+          "base_theme": "death_star_floor",
+          "painting_style": "Citadel",
+          "prompt": "Miniature figure of Darth Vader with red lightsaber ignited, black armored cape flowing, menacing stance, on a 50mm Death Star floor base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["star_wars", "darth_vader", "sith", "lightsaber", "miniature"]
+        },
+        {
+          "id": 6,
+          "variant": 2,
+          "title": "Force Choke",
+          "base_size": "50mm",
+          "base_theme": "death_star_floor",
+          "painting_style": "Citadel",
+          "prompt": "Miniature figure of Darth Vader performing a force choke, right hand extended and clenched, black cape, imposing silhouette, on a 50mm Death Star floor base, tabletop miniature, high detail, studio product photo, neutral background",
+          "tags": ["star_wars", "darth_vader", "sith", "force", "miniature"]
+        }
+      ]
+    }
+  ],
+  "automation_config": {
+    "image_generation": {
+      "recommended_model": "flux-dev",
+      "aspect_ratio": "3:4",
+      "negative_prompt": "blurry, low quality, extra limbs, text, watermark"
+    },
+    "naming_convention": {
+      "pattern": "{group}_{character}_{variant:02d}_{title_snake_case}"
+    }
+  }
+}

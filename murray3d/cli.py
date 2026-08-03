@@ -6,10 +6,13 @@ from pathlib import Path
 
 import typer
 
+from .agent_gen import AgentGenError
 from .ai import AiError
 from .api import ApiError, Client
 from .config import ConfigError, load_settings
 from .convert import ConvertError
+from .freepik import FreepikError
+from .prompts import PromptError
 from .render import RenderError
 
 app = typer.Typer(help="Cliente local de 3DBundle")
@@ -30,9 +33,18 @@ def _dump(obj) -> None:
 def _run(fn):
     try:
         return fn()
-    except (ApiError, ConfigError, RenderError, AiError, ConvertError) as e:
+    except (ApiError, ConfigError, RenderError, AiError, ConvertError,
+            PromptError, FreepikError, AgentGenError) as e:
         typer.echo(str(e))
         raise typer.Exit(code=1)
+
+
+def _make_generator(backend: str, settings, *, claude_model: str | None = None,
+                    mcp_config: str | None = None):
+    """Construye el generador de imágenes según el backend (delegando en autogen)."""
+    from .autogen import build_generator
+    return build_generator(backend, settings, claude_model=claude_model,
+                           mcp_config=mcp_config)
 
 
 @contextmanager
@@ -310,6 +322,114 @@ def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
                 typer.echo(f"  ✗ ERROR modelo {r['id']}: {r['error']}")
         if fail:
             raise typer.Exit(code=1)
+
+
+@app.command("autogen-validate")
+def autogen_validate(prompts_file: Path,
+                     json_out: bool = typer.Option(False, "--json")):
+    """Valida un JSON de prompts y muestra cuántos trabajos saldrían y sus nombres."""
+    from .prompts import iter_jobs, load_prompt_doc
+    doc = _run(lambda: load_prompt_doc(prompts_file))
+    jobs = iter_jobs(doc)
+    if json_out:
+        _dump({
+            "figures": len(doc.figures),
+            "jobs": len(jobs),
+            "model": doc.automation_config.image_generation.recommended_model,
+            "aspect_ratio": doc.automation_config.image_generation.aspect_ratio,
+            "names": [j.output_name for j in jobs],
+        })
+        return
+    ig = doc.automation_config.image_generation
+    typer.echo(f"Figuras: {len(doc.figures)}  ·  Trabajos (prompts): {len(jobs)}")
+    typer.echo(f"Modelo: {ig.recommended_model}  ·  aspect_ratio: {ig.aspect_ratio}")
+    typer.echo("Ejemplos de nombres de salida:")
+    for j in jobs[:10]:
+        typer.echo(f"  [{j.id}] {j.character} → {j.output_name}.jpg")
+    if len(jobs) > 10:
+        typer.echo(f"  … y {len(jobs) - 10} más")
+
+
+@app.command("autogen")
+def autogen_cmd(prompts_file: Path,
+                out: Path = typer.Option(None, "--out", help="Directorio de salida"),
+                backend: str = typer.Option("rest", "--backend",
+                    help="rest (API directa) | agent (claude + MCP de Freepik)"),
+                model: str = typer.Option(None, "--model",
+                    help="Modelo de imagen: flux-dev|mystic|imagen3 (default: el del JSON)"),
+                aspect: str = typer.Option(None, "--aspect",
+                    help="Relación de aspecto, p. ej. 3:4 (default: la del JSON)"),
+                limit: int = typer.Option(None, "--limit", help="Procesa solo los N primeros"),
+                seed: int = typer.Option(None, "--seed", help="Semilla base reproducible"),
+                resume: bool = typer.Option(True, "--resume/--no-resume",
+                    help="Salta los que ya tengan imagen en el directorio"),
+                claude_model: str = typer.Option(None, "--claude-model",
+                    help="(backend agent) modelo de Claude: opus|sonnet|haiku|fable"),
+                mcp_config: str = typer.Option(None, "--mcp-config",
+                    help="(backend agent) fichero JSON de configuración del MCP"),
+                json_out: bool = typer.Option(False, "--json")):
+    """Autogenera una imagen por prompt del JSON (procesa en serie, reanudable).
+
+    Diseñado para lotes grandes: uno a uno, escribe manifest.json incremental y
+    continúa ante errores por elemento. `rest` llama a la API de Freepik; `agent`
+    usa `claude` + el MCP de Freepik como agente simple.
+    """
+    from .autogen import run_autogen, summarize
+    from .prompts import load_prompt_doc
+
+    doc = _run(lambda: load_prompt_doc(prompts_file))
+    settings = _run(lambda: load_settings(require_api_key=False))
+    out_dir = Path(out) if out else (settings.autogen_dir / Path(prompts_file).stem)
+    gen = _run(lambda: _make_generator(backend, settings, claude_model=claude_model,
+                                       mcp_config=mcp_config))
+
+    typer.echo(f"Autogeneración [{backend}] → {out_dir}")
+
+    def prog(i, total, job, phase):
+        typer.echo(f"  [{i + 1}/{total}] {phase}: {job.output_name}")
+
+    try:
+        results = run_autogen(doc, gen, out_dir, on_progress=prog, resume=resume,
+                              limit=limit, model=model, aspect_ratio=aspect, seed=seed)
+    finally:
+        close = getattr(gen, "close", None)
+        if callable(close):
+            close()
+
+    s = summarize(results)
+    if json_out:
+        _dump({"summary": s, "out_dir": str(out_dir), "results": results})
+    else:
+        typer.echo(f"Hecho: {s['ok']} generadas, {s['skipped']} saltadas, "
+                   f"{s['errors']} con error.  (manifest en {out_dir}/manifest.json)")
+        for r in results:
+            if r["status"] == "error":
+                typer.echo(f"  ✗ [{r['id']}] {r['name']}: {r['error']}")
+    if s["errors"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("autogen-image")
+def autogen_image(prompt: str, out: Path,
+                  backend: str = typer.Option("rest", "--backend"),
+                  model: str = typer.Option("flux-dev", "--model"),
+                  aspect: str = typer.Option("3:4", "--aspect"),
+                  seed: int = typer.Option(None, "--seed"),
+                  claude_model: str = typer.Option(None, "--claude-model"),
+                  mcp_config: str = typer.Option(None, "--mcp-config")):
+    """Prueba de humo: genera UNA imagen desde un prompt y la guarda en `out`."""
+    settings = _run(lambda: load_settings(require_api_key=False))
+    gen = _run(lambda: _make_generator(backend, settings, claude_model=claude_model,
+                                       mcp_config=mcp_config))
+    try:
+        urls = _run(lambda: gen.generate(prompt, model=model, aspect_ratio=aspect,
+                                         seed=seed))
+        _run(lambda: gen.download(urls[0], Path(out)))
+    finally:
+        close = getattr(gen, "close", None)
+        if callable(close):
+            close()
+    _dump({"url": urls[0], "path": str(out)})
 
 
 @app.command()

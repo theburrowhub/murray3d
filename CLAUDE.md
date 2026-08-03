@@ -16,6 +16,11 @@ cp .env.dist .env   # y rellena MURRAY_API_KEY
   `.venv/bin/murray3d whoami` (debe imprimir el perfil).
 - El flujo "IA" ejecuta el binario **`claude`** como subproceso: debe estar en el
   `PATH` y autenticado.
+- **Autogeneración** (comandos `autogen*`): genera imágenes desde un JSON de
+  prompts con Freepik. Necesita `FREEPIK_API_KEY` en `.env` (backend `rest`) o el
+  MCP de Freepik autenticado en `claude` (backend `agent`). No requiere la clave
+  de 3DBundle. Detalles en `docs/autogen.md`. Nota: Freepik NO genera malla 3D por
+  API, solo imágenes de referencia.
 
 ## Modelo mental
 
@@ -52,6 +57,13 @@ murray3d ai-publish <id> [--yes] [--model …]   # ai-generate + (confirmar) + p
 # limpieza de temporales por modelo, y continúan ante errores por elemento)
 murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo como borrador
 murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model …] [--json]
+
+# Autogeneración desde JSON de prompts (Freepik) — ver docs/autogen.md
+murray3d autogen-validate <prompts.json>                 # cuántas imágenes y nombres
+murray3d autogen-image "<prompt>" <out.jpg> [--aspect 3:4]   # prueba de humo (1 img)
+murray3d autogen <prompts.json> [--out DIR] [--backend rest|agent]
+    [--model flux-dev|mystic|imagen3] [--aspect 3:4] [--limit N] [--seed S]
+    [--resume/--no-resume] [--claude-model …] [--mcp-config …] [--json]
 
 # Packs
 murray3d packs list [--json]
