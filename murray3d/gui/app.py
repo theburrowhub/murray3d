@@ -24,6 +24,7 @@ def run_gui():
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QMessageBox, QTabWidget,
     )
+    from .autogen_view import build_autogen_view
     from .models_view import build_models_view
     from .packs_view import build_packs_view
 
@@ -45,6 +46,7 @@ def run_gui():
     tabs = QTabWidget()
     tabs.addTab(build_models_view(client, settings), "Modelos")
     tabs.addTab(build_packs_view(client, settings), "Packs")
+    tabs.addTab(build_autogen_view(settings), "Autogeneración")
     win.setCentralWidget(tabs)
     win.show()
 

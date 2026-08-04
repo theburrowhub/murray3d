@@ -6,10 +6,14 @@ from pathlib import Path
 
 import typer
 
+from .agent_gen import AgentGenError
 from .ai import AiError
 from .api import ApiError, Client
 from .config import ConfigError, load_settings
 from .convert import ConvertError
+from .mcp_health import McpAuthError, ensure_magnific_auth
+from .mesh_gen import MeshGenError
+from .prompts import PromptError
 from .render import RenderError
 
 app = typer.Typer(help="Cliente local de 3DBundle")
@@ -30,9 +34,26 @@ def _dump(obj) -> None:
 def _run(fn):
     try:
         return fn()
-    except (ApiError, ConfigError, RenderError, AiError, ConvertError) as e:
+    except (ApiError, ConfigError, RenderError, AiError, ConvertError,
+            PromptError, AgentGenError, MeshGenError, McpAuthError) as e:
         typer.echo(str(e))
         raise typer.Exit(code=1)
+
+
+def _make_generator(settings, *, claude_model: str | None = None,
+                    mcp_config: str | None = None):
+    """Construye el generador de imágenes (agente `claude` + MCP de Magnific)."""
+    from .autogen import build_image_generator
+    return build_image_generator(settings, claude_model=claude_model,
+                                 mcp_config=mcp_config)
+
+
+def _make_mesh_generator(settings, *, claude_model: str | None = None,
+                         mcp_config: str | None = None):
+    """Construye el generador de malla 3D (agente + MCP de Magnific)."""
+    from .autogen import build_mesh_generator
+    return build_mesh_generator(settings, claude_model=claude_model,
+                                mcp_config=mcp_config)
 
 
 @contextmanager
@@ -310,6 +331,177 @@ def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
                 typer.echo(f"  ✗ ERROR modelo {r['id']}: {r['error']}")
         if fail:
             raise typer.Exit(code=1)
+
+
+@app.command("autogen-validate")
+def autogen_validate(prompts_file: Path,
+                     make_3d: bool = typer.Option(False, "--make-3d",
+                         help="Incluye el coste estimado del 3D"),
+                     model: str = typer.Option(None, "--model",
+                         help="Modelo de imagen para la estimación (default: el del JSON)"),
+                     json_out: bool = typer.Option(False, "--json")):
+    """Valida un JSON de prompts: cuántos trabajos, nombres y coste estimado."""
+    from .autogen import estimate_credits
+    from .prompts import iter_jobs, load_prompt_doc
+    doc = _run(lambda: load_prompt_doc(prompts_file))
+    jobs = iter_jobs(doc)
+    ig = doc.automation_config.image_generation
+    img_model = model or ig.recommended_model
+    est = estimate_credits(len(jobs), img_model, make_3d=make_3d)
+    if json_out:
+        _dump({
+            "figures": len(doc.figures),
+            "jobs": len(jobs),
+            "model": img_model,
+            "aspect_ratio": ig.aspect_ratio,
+            "estimate_credits": est,
+            "names": [j.output_name for j in jobs],
+        })
+        return
+    typer.echo(f"Figuras: {len(doc.figures)}  ·  Trabajos (prompts): {len(jobs)}")
+    typer.echo(f"Modelo: {img_model}  ·  aspect_ratio: {ig.aspect_ratio}")
+    typer.echo("Ejemplos de nombres de salida:")
+    for j in jobs[:10]:
+        typer.echo(f"  [{j.id}] {j.character} → {j.output_name}.jpg")
+    if len(jobs) > 10:
+        typer.echo(f"  … y {len(jobs) - 10} más")
+    typer.echo(
+        f"\nCoste estimado (≈): imágenes {est['image_total']:,} cr"
+        + (f" + 3D {est['mesh_total']:,} cr = {est['total']:,} cr total"
+           if make_3d else f"  (sin --make-3d)")
+    )
+    typer.echo("  (aprox.; usa `mcp-check` para el MCP y `account_balance` para el saldo real)")
+
+
+@app.command("autogen")
+def autogen_cmd(prompts_file: Path,
+                out: Path = typer.Option(None, "--out", help="Directorio de salida"),
+                model: str = typer.Option(None, "--model",
+                    help="Modelo de imagen (mode de Magnific): flux-dev|seedream-5-pro|… "
+                         "(default: el del JSON)"),
+                aspect: str = typer.Option(None, "--aspect",
+                    help="Relación de aspecto, p. ej. 3:4 (default: la del JSON)"),
+                limit: int = typer.Option(None, "--limit", help="Procesa solo los N primeros"),
+                seed: int = typer.Option(None, "--seed", help="Semilla base reproducible"),
+                resume: bool = typer.Option(True, "--resume/--no-resume",
+                    help="Salta los que ya tengan imagen (o GLB con --make-3d)"),
+                make_3d: bool = typer.Option(False, "--make-3d",
+                    help="Genera también la malla 3D (.glb) vía `models3d_generate`"),
+                claude_model: str = typer.Option(None, "--claude-model",
+                    help="Modelo de Claude para el agente: opus|sonnet|haiku|fable"),
+                mcp_config: str = typer.Option(None, "--mcp-config",
+                    help="Fichero JSON de configuración del MCP (si no está ya en `claude`)"),
+                json_out: bool = typer.Option(False, "--json")):
+    """Autogenera una imagen por prompt del JSON (procesa en serie, reanudable).
+
+    Usa el CLI `claude` + el MCP de Magnific (`images_generate`). Diseñado para
+    lotes: uno a uno, manifest.json incremental, continúa ante errores. Con
+    `--make-3d` añade el paso image-to-3D (GLB) por `models3d_generate`.
+
+    ⚠️ `--make-3d` gasta ~580 créditos por modelo: úsalo con `--limit`.
+    """
+    from .autogen import run_autogen, summarize
+    from .prompts import load_prompt_doc
+
+    doc = _run(lambda: load_prompt_doc(prompts_file))
+    settings = _run(lambda: load_settings(require_api_key=False))
+    out_dir = Path(out) if out else (settings.autogen_dir / Path(prompts_file).stem)
+    typer.echo("Comprobando autenticación del MCP de Magnific…")
+    _run(ensure_magnific_auth)
+    gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
+                                       mcp_config=mcp_config))
+    mesh = None
+    if make_3d:
+        mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
+                                                 mcp_config=mcp_config))
+
+    typer.echo(f"Autogeneración{' +3D' if make_3d else ''} → {out_dir}")
+
+    def prog(i, total, job, phase):
+        typer.echo(f"  [{i + 1}/{total}] {phase}: {job.output_name}")
+
+    try:
+        results = run_autogen(doc, gen, out_dir, on_progress=prog, resume=resume,
+                              limit=limit, model=model, aspect_ratio=aspect, seed=seed,
+                              make_3d=make_3d, mesh_generator=mesh)
+    finally:
+        close = getattr(gen, "close", None)
+        if callable(close):
+            close()
+
+    s = summarize(results)
+    if json_out:
+        _dump({"summary": s, "out_dir": str(out_dir), "results": results})
+    else:
+        typer.echo(f"Hecho: {s['ok']} generadas, {s['skipped']} saltadas, "
+                   f"{s['errors']} con error.  (manifest en {out_dir}/manifest.json)")
+        for r in results:
+            if r["status"] == "error":
+                typer.echo(f"  ✗ [{r['id']}] {r['name']}: {r['error']}")
+    if s["errors"]:
+        # Si hubo errores, comprueba si el MCP caducó a mitad de lote y avisa.
+        from .mcp_health import REAUTH_HINT, magnific_status
+        try:
+            ok, _ = magnific_status()
+            if not ok:
+                typer.echo("\n⚠️  " + REAUTH_HINT)
+        except McpAuthError:
+            pass
+        raise typer.Exit(code=1)
+
+
+@app.command("autogen-image")
+def autogen_image(prompt: str, out: Path,
+                  model: str = typer.Option("flux-dev", "--model",
+                      help="mode de Magnific: flux-dev|seedream-5-pro|…"),
+                  aspect: str = typer.Option("3:4", "--aspect"),
+                  seed: int = typer.Option(None, "--seed"),
+                  claude_model: str = typer.Option(None, "--claude-model"),
+                  mcp_config: str = typer.Option(None, "--mcp-config")):
+    """Prueba de humo: genera UNA imagen desde un prompt y la guarda en `out`."""
+    settings = _run(lambda: load_settings(require_api_key=False))
+    _run(ensure_magnific_auth)
+    gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
+                                       mcp_config=mcp_config))
+    try:
+        urls = _run(lambda: gen.generate(prompt, model=model, aspect_ratio=aspect,
+                                         seed=seed))
+        _run(lambda: gen.download(urls[0], Path(out)))
+    finally:
+        close = getattr(gen, "close", None)
+        if callable(close):
+            close()
+    _dump({"url": urls[0], "path": str(out)})
+
+
+@app.command("autogen-3d")
+def autogen_3d(image_url: str, out: Path,
+               claude_model: str = typer.Option(None, "--claude-model"),
+               mcp_config: str = typer.Option(None, "--mcp-config")):
+    """Prueba de humo 3D: genera un .glb desde la URL de una imagen y lo guarda.
+
+    Vía agente + MCP de Magnific (`models3d_generate`). ⚠️ Gasta ~580–1160 créditos.
+    """
+    settings = _run(lambda: load_settings(require_api_key=False))
+    _run(ensure_magnific_auth)
+    mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
+                                             mcp_config=mcp_config))
+    urls = _run(lambda: mesh.generate_from_image(image_url))
+    _run(lambda: mesh.download(urls[0], Path(out)))
+    _dump({"model_url": urls[0], "path": str(out)})
+
+
+@app.command("mcp-check")
+def mcp_check():
+    """Comprueba si el MCP de Magnific está autenticado en `claude` (para autogen)."""
+    from .mcp_health import magnific_status
+    ok, detail = _run(magnific_status)
+    if ok:
+        typer.echo(f"✔ MCP de Magnific autenticado.  ({detail})")
+    else:
+        from .mcp_health import REAUTH_HINT
+        typer.echo(f"✗ {detail}\n\n{REAUTH_HINT}")
+        raise typer.Exit(code=1)
 
 
 @app.command()

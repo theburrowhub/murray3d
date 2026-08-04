@@ -20,6 +20,8 @@ class Settings(BaseModel):
     cache_dir: Path
     shots_dir: Path
     known_categories: list[str]
+    # Directorio de salida de la autogeneración (imágenes + GLB).
+    autogen_dir: Path | None = None
 
 
 def _read_key_file(key_path: Path) -> str | None:
@@ -34,12 +36,13 @@ def _read_key_file(key_path: Path) -> str | None:
     return None
 
 
-def load_settings(key_path: Path | None = None) -> Settings:
+def load_settings(key_path: Path | None = None, *,
+                  require_api_key: bool = True) -> Settings:
     if key_path is None:
         key_path = PROJECT_ROOT / "key.txt"
 
     api_key = os.environ.get("MURRAY_API_KEY") or _read_key_file(key_path)
-    if not api_key:
+    if not api_key and require_api_key:
         raise ConfigError(
             "No se encontró la API key. Define MURRAY_API_KEY o crea key.txt "
             f"(buscado en {key_path})."
@@ -50,13 +53,15 @@ def load_settings(key_path: Path | None = None) -> Settings:
     root = home / ".murray3d"
     cache_dir = root / "cache"
     shots_dir = root / "shots"
+    autogen_dir = root / "autogen"
     cache_dir.mkdir(parents=True, exist_ok=True)
     shots_dir.mkdir(parents=True, exist_ok=True)
 
     return Settings(
         base_url=base,
-        api_key=api_key,
+        api_key=api_key or "",
         cache_dir=cache_dir,
         shots_dir=shots_dir,
         known_categories=list(DEFAULT_CATEGORIES),
+        autogen_dir=autogen_dir,
     )
