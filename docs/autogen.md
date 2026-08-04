@@ -5,15 +5,17 @@ prompts bien ordenados, usando **Freepik**. Pensado para lotes grandes: procesa
 de uno en uno, escribe un `manifest.json` incremental (reanudable) y continúa
 ante errores por elemento.
 
-> **⚠️ Nota sobre "3D":** la API de Freepik/Magnific **solo genera imágenes**
-> (flux-dev, Mystic, Imagen3) y upscaling; **no expone generación de malla 3D**
-> (`.glb/.obj`) por API. El "3D Generator" de Freepik (Tripo/Trellis → GLB) solo
-> está en la web app, no en la API. Por eso esta primera fase autogenera las
-> **imágenes de referencia** de cada miniatura a partir de los prompts. La malla
-> 3D real (para subir a 3DBundle) requiere un paso posterior: el 3D Generator web
-> de Freepik, o una API de terceros (Tripo/Meshy) en una fase futura. El motor de
-> lotes está desacoplado por un protocolo `ImageGenerator`, así que enchufar ese
-> paso image-to-3D después es directo.
+> **Sobre el 3D — dónde vive cada cosa (verificado):**
+> - La **REST API** de Freepik/Magnific **solo genera imágenes** (flux-dev,
+>   Mystic, Seedream, Imagen3) y upscaling. **No hay endpoint REST de 3D.**
+> - El **MCP de Freepik** (`api.freepik.com/mcp`, API key) tampoco: imagen
+>   (Mystic), vídeo (Kling), iconos, stock.
+> - El **MCP de Magnific** (`mcp.magnific.com`, **OAuth**) **sí** expone
+>   `models3d_generate` (image-to-3D → **GLB**, con Tripo/Trellis).
+>
+> Por eso el pipeline es: **prompt → imagen** (REST o agente) **→ malla 3D**
+> (`--make-3d`, solo por agente + MCP de Magnific) **→** subir a 3DBundle.
+> ⚠️ Cada 3D gasta **~580–1160 créditos**; usa `--make-3d` con `--limit`.
 
 ## 1. Suministrar la clave de Freepik
 
@@ -85,7 +87,31 @@ murray3d autogen examples/prompts-miniaturas.sample.json --backend agent --claud
 Opciones de `autogen`:
 `--out DIR` · `--backend rest|agent` · `--model flux-dev|mystic|imagen3` ·
 `--aspect 3:4` · `--limit N` · `--seed S` · `--resume/--no-resume` ·
-`--claude-model` y `--mcp-config` (backend agent) · `--json`.
+`--make-3d` · `--claude-model` y `--mcp-config` (agente / 3D) · `--json`.
+
+### Paso 3D (image-to-3D → GLB)
+
+El 3D **solo** es posible por el **MCP de Magnific** (OAuth); no hay REST. Va por
+un agente: `claude` + `models3d_generate`. Requisitos:
+
+1. Autentica el MCP de Magnific en `claude` **una vez**: `/mcp` (login OAuth), o
+   añádelo con su transporte ([`examples/magnific-mcp.json`](../examples/magnific-mcp.json)).
+2. Ejecuta con `--make-3d` (usa `--limit`: cada modelo gasta ~580–1160 créditos):
+
+```bash
+# Prueba de humo: 1 imagen -> 1 GLB
+murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d \
+    --mcp-config examples/magnific-mcp.json
+
+# Solo el 3D desde una imagen ya generada (URL pública)
+murray3d autogen-3d "https://cdn.freepik/imagen.jpg" salida.glb \
+    --mcp-config examples/magnific-mcp.json
+```
+
+Cada trabajo produce `<nombre>.jpg` y `<nombre>.glb`; el `manifest.json` guarda
+`glb_path`/`glb_url`. Si el 3D falla, la imagen se conserva y en la siguiente
+pasada (resume) se **reutiliza su URL** para reintentar solo el 3D (no re-gasta
+créditos de imagen).
 
 Salida: una imagen por prompt en `--out` (nombre según
 `automation_config.naming_convention.pattern`, p. ej.

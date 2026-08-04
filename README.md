@@ -115,16 +115,19 @@ reanudable, continúa ante errores). Guía completa en [`docs/autogen.md`](docs/
 
 - Necesita una **API key de Freepik** (`FREEPIK_API_KEY` en `.env`). Obténla en
   <https://www.freepik.com/developers/dashboard>.
-- Dos backends: `rest` (API directa; ideal para cientos en serie) y `agent`
-  (`claude` + **MCP de Freepik** como agente simple).
-- **Nota 3D:** la API de Freepik **solo genera imágenes**, no malla `.glb`. Esta
-  fase autogenera las imágenes de referencia; el paso image-to-3D queda para una
-  fase posterior (3D Generator web de Freepik, o Tripo/Meshy).
+- Dos backends de imagen: `rest` (API directa; ideal para cientos en serie) y
+  `agent` (`claude` + MCP como agente simple).
+- **Malla 3D (`--make-3d`):** la REST API solo genera imágenes, pero el **MCP de
+  Magnific** (OAuth) sí genera `.glb` (`models3d_generate`, Tripo/Trellis). El
+  paso 3D va por agente + ese MCP. ⚠️ ~580–1160 créditos por modelo — usar con
+  `--limit`. Pipeline: prompt → imagen → GLB → subir a 3DBundle.
 
 ```bash
 murray3d autogen-validate examples/prompts-miniaturas.sample.json   # inspecciona
 murray3d autogen-image "Miniature figure of Goku, 40mm base" out.jpg   # 1 imagen
 murray3d autogen examples/prompts-miniaturas.sample.json --limit 3 --seed 42
+murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d \
+    --mcp-config examples/magnific-mcp.json                          # imagen + GLB
 ```
 
 En la GUI hay una pestaña **Autogeneración** (cargar JSON → tabla → Generar).
@@ -181,8 +184,9 @@ murray3d/
   publish.py    orquestación: descargar -> render -> IA -> publicar
   prompts.py    modelos del JSON de prompts + convención de nombres (autogen)
   freepik.py    cliente REST de Freepik (text-to-image async con polling)
-  agent_gen.py  backend "agente simple": `claude` + MCP de Freepik
-  autogen.py    orquestación por lotes (serie, reanudable, manifest)
+  agent_gen.py  backend "agente simple" de imagen: `claude` + MCP de Freepik
+  mesh_gen.py   image-to-3D (GLB) por agente + MCP de Magnific (models3d_generate)
+  autogen.py    orquestación por lotes (serie, reanudable, manifest, +3D)
   cli.py        CLI (typer)
   gui/          app PySide6 (visor, gestor de modelos/packs, autogeneración)
 ```

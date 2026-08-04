@@ -8,15 +8,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..autogen import BACKENDS, build_generator, run_autogen, summarize
+from ..autogen import (
+    BACKENDS,
+    build_generator,
+    build_mesh_generator,
+    run_autogen,
+    summarize,
+)
 from ..prompts import PromptError, iter_jobs, load_prompt_doc
 
 
 def build_autogen_view(settings):
     from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
     from PySide6.QtWidgets import (
-        QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-        QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
+        QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
+        QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
         QTableWidgetItem, QVBoxLayout, QWidget,
     )
 
@@ -37,11 +43,14 @@ def build_autogen_view(settings):
     aspect = QLineEdit(); aspect.setPlaceholderText("aspect (3:4)"); aspect.setMaximumWidth(90)
     limit = QSpinBox(); limit.setMaximum(100000); limit.setSpecialValueText("todos")
     seed = QSpinBox(); seed.setMaximum(2_000_000_000); seed.setSpecialValueText("aleatoria")
+    make3d = QCheckBox("También 3D (Magnific MCP)")
+    make3d.setToolTip("Genera .glb por agente + MCP de Magnific. ⚠️ ~580–1160 créditos/modelo.")
     cfg.addWidget(QLabel("Backend:")); cfg.addWidget(backend)
     cfg.addWidget(QLabel("Modelo:")); cfg.addWidget(model)
     cfg.addWidget(QLabel("Aspect:")); cfg.addWidget(aspect)
     cfg.addWidget(QLabel("Límite:")); cfg.addWidget(limit)
     cfg.addWidget(QLabel("Seed:")); cfg.addWidget(seed)
+    cfg.addWidget(make3d)
     cfg.addStretch()
     outer.addLayout(cfg)
 
@@ -134,15 +143,16 @@ def build_autogen_view(settings):
         failed = Signal(str)
 
     class AutogenWorker(QRunnable):
-        def __init__(self, doc, generator, out, model_ov, aspect_ov, lim, sd):
+        def __init__(self, doc, generator, out, model_ov, aspect_ov, lim, sd,
+                     mk3d, mesh):
             super().__init__()
             self.setAutoDelete(False)
             self.signals = Signals()
-            self._args = (doc, generator, out, model_ov, aspect_ov, lim, sd)
+            self._args = (doc, generator, out, model_ov, aspect_ov, lim, sd, mk3d, mesh)
 
         @Slot()
         def run(self):
-            doc, generator, out, model_ov, aspect_ov, lim, sd = self._args
+            doc, generator, out, model_ov, aspect_ov, lim, sd, mk3d, mesh = self._args
 
             def on_prog(i, total, job, phase):
                 self.signals.progress.emit(i, total, job.id, job.output_name)
@@ -150,7 +160,8 @@ def build_autogen_view(settings):
             try:
                 results = run_autogen(doc, generator, out, on_progress=on_prog,
                                       model=model_ov, aspect_ratio=aspect_ov,
-                                      limit=lim, seed=sd)
+                                      limit=lim, seed=sd, make_3d=mk3d,
+                                      mesh_generator=mesh)
                 self.signals.finished.emit(results)
             except Exception as e:  # noqa: BLE001
                 self.signals.failed.emit(str(e))
@@ -193,18 +204,27 @@ def build_autogen_view(settings):
         if not out:
             QMessageBox.information(root, "Salida", "Indica un directorio de salida.")
             return
+        mk3d = make3d.isChecked()
         try:
             generator = build_generator(backend.currentText(), settings)
+            mesh = build_mesh_generator(settings) if mk3d else None
         except Exception as e:  # noqa: BLE001 - p. ej. falta FREEPIK_API_KEY
             QMessageBox.critical(root, "Configuración", str(e))
             return
+        if mk3d:
+            n = limit.value() or len(state["jobs"])
+            if QMessageBox.question(
+                root, "Generar 3D",
+                f"El 3D gasta ~580–1160 créditos por modelo (~{n} modelos). ¿Continuar?"
+            ) != QMessageBox.Yes:
+                return
         state["running"] = True
         btn_gen.setEnabled(False)
         status.setText("Generando…")
         lim = limit.value() or None
         sd = seed.value() or None
         w = AutogenWorker(doc, generator, Path(out), selected_model(),
-                          aspect.text().strip() or None, lim, sd)
+                          aspect.text().strip() or None, lim, sd, mk3d, mesh)
         w.signals.progress.connect(on_progress, Qt.QueuedConnection)
         w.signals.finished.connect(on_finished, Qt.QueuedConnection)
         w.signals.failed.connect(on_failed, Qt.QueuedConnection)

@@ -25,7 +25,21 @@ class ImageGenerator(Protocol):
     def download(self, url: str, dest: Path) -> Path: ...
 
 
+class MeshGenerator(Protocol):
+    def generate_from_image(self, image_url: str) -> list[str]: ...
+
+    def download(self, url: str, dest: Path) -> Path: ...
+
+
 BACKENDS = ("rest", "agent")
+
+
+def build_mesh_generator(settings, *, claude_model: str | None = None,
+                         mcp_config: str | None = None) -> MeshGenerator:
+    """Generador de malla 3D (agente + MCP de Magnific). Es la única vía: no hay
+    REST para 3D. Requiere el MCP de Magnific autenticado en `claude`."""
+    from .mesh_gen import AgentMeshGenerator
+    return AgentMeshGenerator(claude_model=claude_model, mcp_config=mcp_config)
 
 
 def build_generator(backend: str, settings, *, claude_model: str | None = None,
@@ -59,20 +73,44 @@ def _effective_seed(base_seed: int | None, job: GenJob) -> int | None:
     return ((v - 1) % 4294967295) + 1  # acota a 1..4294967295
 
 
+def _exists_nonempty(p: Path) -> bool:
+    return p.exists() and p.stat().st_size > 0
+
+
+def _load_prev(manifest_path: Path) -> dict[str, dict]:
+    """Carga resultados previos por nombre (para reutilizar la URL de imagen en
+    resume y no re-gastar créditos de imagen al reintentar solo el 3D)."""
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {r["name"]: r for r in data.get("results", []) if r.get("name")}
+
+
 def run_autogen(doc: PromptDoc, generator: ImageGenerator, out_dir: Path, *,
                 on_progress=None, resume: bool = True, limit: int | None = None,
                 model: str | None = None, aspect_ratio: str | None = None,
                 seed: int | None = None, ext: str = "jpg",
+                make_3d: bool = False, mesh_generator: MeshGenerator | None = None,
+                mesh_ext: str = "glb",
                 manifest_name: str = "manifest.json") -> list[dict]:
-    """Genera una imagen por prompt y las guarda en ``out_dir``.
+    """Genera una imagen por prompt (y opcionalmente su malla 3D) en ``out_dir``.
+
+    Con ``make_3d=True`` y un ``mesh_generator``, tras la imagen genera el `.glb`
+    a partir de su URL (image-to-3D vía agente + MCP de Magnific).
 
     Devuelve una lista de dicts por trabajo:
-    ``{id, name, ok, status, path?, url?, error?}``.
-    ``status`` ∈ {"ok", "skipped", "error"}.
+    ``{id, name, ok, status, path?, url?, glb_path?, glb_url?, error?}``.
+    ``status`` ∈ {"ok", "skipped", "error"}. La decisión de "saltar" (resume) mira
+    el `.glb` si ``make_3d``, o la imagen en caso contrario.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / manifest_name
+    prev = _load_prev(manifest_path) if resume else {}
+
+    if make_3d and mesh_generator is None:
+        raise ValueError("make_3d=True requiere un mesh_generator.")
 
     jobs = iter_jobs(doc, model=model, aspect_ratio=aspect_ratio)
     if limit is not None:
@@ -81,28 +119,55 @@ def run_autogen(doc: PromptDoc, generator: ImageGenerator, out_dir: Path, *,
     results: list[dict] = []
     total = len(jobs)
     for i, job in enumerate(jobs):
-        dest = out_dir / f"{job.output_name}.{ext}"
+        name = job.output_name
+        img_dest = out_dir / f"{name}.{ext}"
+        glb_dest = out_dir / f"{name}.{mesh_ext}"
+        target = glb_dest if make_3d else img_dest
         if on_progress:
             on_progress(i, total, job, "generando")
 
-        if resume and dest.exists() and dest.stat().st_size > 0:
-            results.append({"id": job.id, "name": job.output_name, "ok": True,
-                            "status": "skipped", "path": str(dest)})
+        if resume and _exists_nonempty(target):
+            results.append({"id": job.id, "name": name, "ok": True,
+                            "status": "skipped", "path": str(target)})
             _write_manifest(manifest_path, doc, results, total)
             continue
 
+        rec: dict = {"id": job.id, "name": name, "ok": True, "status": "ok"}
+        image_url: str | None = None
         try:
-            urls = generator.generate(
-                job.prompt, model=job.model, aspect_ratio=job.aspect_ratio,
-                seed=_effective_seed(seed, job),
-                negative_prompt=job.negative_prompt or None,
-            )
-            generator.download(urls[0], dest)
-            results.append({"id": job.id, "name": job.output_name, "ok": True,
-                            "status": "ok", "path": str(dest), "url": urls[0]})
+            # --- Imagen: reutiliza la URL previa si ya está descargada ---
+            prev_url = prev.get(name, {}).get("url")
+            if _exists_nonempty(img_dest) and prev_url:
+                image_url = prev_url
+            else:
+                urls = generator.generate(
+                    job.prompt, model=job.model, aspect_ratio=job.aspect_ratio,
+                    seed=_effective_seed(seed, job),
+                    negative_prompt=job.negative_prompt or None,
+                )
+                image_url = urls[0]
+                generator.download(image_url, img_dest)
+            rec["path"] = str(img_dest)
+            rec["url"] = image_url
+
+            # --- Malla 3D opcional (agente + MCP de Magnific) ---
+            if make_3d:
+                if on_progress:
+                    on_progress(i, total, job, "3D")
+                m_urls = mesh_generator.generate_from_image(image_url)
+                mesh_generator.download(m_urls[0], glb_dest)
+                rec["glb_path"] = str(glb_dest)
+                rec["glb_url"] = m_urls[0]
+
+            results.append(rec)
         except Exception as e:  # noqa: BLE001 - continuar el lote ante error por item
-            results.append({"id": job.id, "name": job.output_name, "ok": False,
-                            "status": "error", "error": str(e)})
+            err = {"id": job.id, "name": name, "ok": False, "status": "error",
+                   "error": str(e)}
+            if _exists_nonempty(img_dest):  # la imagen pudo salir; el 3D no
+                err["path"] = str(img_dest)
+                if image_url:  # conserva la URL para reutilizarla en resume (solo 3D)
+                    err["url"] = image_url
+            results.append(err)
         _write_manifest(manifest_path, doc, results, total)
 
     return results

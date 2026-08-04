@@ -12,6 +12,7 @@ from .api import ApiError, Client
 from .config import ConfigError, load_settings
 from .convert import ConvertError
 from .freepik import FreepikError
+from .mesh_gen import MeshGenError
 from .prompts import PromptError
 from .render import RenderError
 
@@ -34,7 +35,7 @@ def _run(fn):
     try:
         return fn()
     except (ApiError, ConfigError, RenderError, AiError, ConvertError,
-            PromptError, FreepikError, AgentGenError) as e:
+            PromptError, FreepikError, AgentGenError, MeshGenError) as e:
         typer.echo(str(e))
         raise typer.Exit(code=1)
 
@@ -45,6 +46,14 @@ def _make_generator(backend: str, settings, *, claude_model: str | None = None,
     from .autogen import build_generator
     return build_generator(backend, settings, claude_model=claude_model,
                            mcp_config=mcp_config)
+
+
+def _make_mesh_generator(settings, *, claude_model: str | None = None,
+                         mcp_config: str | None = None):
+    """Construye el generador de malla 3D (agente + MCP de Magnific)."""
+    from .autogen import build_mesh_generator
+    return build_mesh_generator(settings, claude_model=claude_model,
+                                mcp_config=mcp_config)
 
 
 @contextmanager
@@ -363,16 +372,21 @@ def autogen_cmd(prompts_file: Path,
                 seed: int = typer.Option(None, "--seed", help="Semilla base reproducible"),
                 resume: bool = typer.Option(True, "--resume/--no-resume",
                     help="Salta los que ya tengan imagen en el directorio"),
+                make_3d: bool = typer.Option(False, "--make-3d",
+                    help="Genera también la malla 3D (.glb) vía agente + MCP de Magnific"),
                 claude_model: str = typer.Option(None, "--claude-model",
-                    help="(backend agent) modelo de Claude: opus|sonnet|haiku|fable"),
+                    help="(backend agent / 3D) modelo de Claude: opus|sonnet|haiku|fable"),
                 mcp_config: str = typer.Option(None, "--mcp-config",
-                    help="(backend agent) fichero JSON de configuración del MCP"),
+                    help="(agent / 3D) fichero JSON de configuración del MCP"),
                 json_out: bool = typer.Option(False, "--json")):
     """Autogenera una imagen por prompt del JSON (procesa en serie, reanudable).
 
     Diseñado para lotes grandes: uno a uno, escribe manifest.json incremental y
     continúa ante errores por elemento. `rest` llama a la API de Freepik; `agent`
-    usa `claude` + el MCP de Freepik como agente simple.
+    usa `claude` + MCP como agente simple. Con `--make-3d` añade el paso
+    image-to-3D (GLB) por el MCP de Magnific.
+
+    ⚠️ `--make-3d` gasta ~580–1160 créditos por modelo: úsalo con `--limit`.
     """
     from .autogen import run_autogen, summarize
     from .prompts import load_prompt_doc
@@ -382,15 +396,20 @@ def autogen_cmd(prompts_file: Path,
     out_dir = Path(out) if out else (settings.autogen_dir / Path(prompts_file).stem)
     gen = _run(lambda: _make_generator(backend, settings, claude_model=claude_model,
                                        mcp_config=mcp_config))
+    mesh = None
+    if make_3d:
+        mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
+                                                 mcp_config=mcp_config))
 
-    typer.echo(f"Autogeneración [{backend}] → {out_dir}")
+    typer.echo(f"Autogeneración [{backend}{' +3D' if make_3d else ''}] → {out_dir}")
 
     def prog(i, total, job, phase):
         typer.echo(f"  [{i + 1}/{total}] {phase}: {job.output_name}")
 
     try:
         results = run_autogen(doc, gen, out_dir, on_progress=prog, resume=resume,
-                              limit=limit, model=model, aspect_ratio=aspect, seed=seed)
+                              limit=limit, model=model, aspect_ratio=aspect, seed=seed,
+                              make_3d=make_3d, mesh_generator=mesh)
     finally:
         close = getattr(gen, "close", None)
         if callable(close):
@@ -430,6 +449,22 @@ def autogen_image(prompt: str, out: Path,
         if callable(close):
             close()
     _dump({"url": urls[0], "path": str(out)})
+
+
+@app.command("autogen-3d")
+def autogen_3d(image_url: str, out: Path,
+               claude_model: str = typer.Option(None, "--claude-model"),
+               mcp_config: str = typer.Option(None, "--mcp-config")):
+    """Prueba de humo 3D: genera un .glb desde la URL de una imagen y lo guarda.
+
+    Vía agente + MCP de Magnific (`models3d_generate`). ⚠️ Gasta ~580–1160 créditos.
+    """
+    settings = _run(lambda: load_settings(require_api_key=False))
+    mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
+                                             mcp_config=mcp_config))
+    urls = _run(lambda: mesh.generate_from_image(image_url))
+    _run(lambda: mesh.download(urls[0], Path(out)))
+    _dump({"model_url": urls[0], "path": str(out)})
 
 
 @app.command()

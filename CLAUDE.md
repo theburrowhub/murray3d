@@ -17,10 +17,13 @@ cp .env.dist .env   # y rellena MURRAY_API_KEY
 - El flujo "IA" ejecuta el binario **`claude`** como subproceso: debe estar en el
   `PATH` y autenticado.
 - **Autogeneración** (comandos `autogen*`): genera imágenes desde un JSON de
-  prompts con Freepik. Necesita `FREEPIK_API_KEY` en `.env` (backend `rest`) o el
-  MCP de Freepik autenticado en `claude` (backend `agent`). No requiere la clave
-  de 3DBundle. Detalles en `docs/autogen.md`. Nota: Freepik NO genera malla 3D por
-  API, solo imágenes de referencia.
+  prompts. Necesita `FREEPIK_API_KEY` en `.env` (backend `rest`) o el MCP de
+  Freepik autenticado en `claude` (backend `agent`). No requiere la clave de
+  3DBundle. Detalles en `docs/autogen.md`.
+- **Malla 3D** (`--make-3d`, `autogen-3d`): la REST API no hace 3D; sí el **MCP de
+  Magnific** (`mcp.magnific.com`, OAuth) con `models3d_generate` (→ GLB). Va por
+  agente `claude`; requiere el MCP de Magnific autenticado (`/mcp`) o
+  `--mcp-config examples/magnific-mcp.json`. ⚠️ ~580-1160 créditos por modelo.
 
 ## Modelo mental
 
@@ -58,12 +61,14 @@ murray3d ai-publish <id> [--yes] [--model …]   # ai-generate + (confirmar) + p
 murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo como borrador
 murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model …] [--json]
 
-# Autogeneración desde JSON de prompts (Freepik) — ver docs/autogen.md
+# Autogeneración desde JSON de prompts — ver docs/autogen.md
 murray3d autogen-validate <prompts.json>                 # cuántas imágenes y nombres
 murray3d autogen-image "<prompt>" <out.jpg> [--aspect 3:4]   # prueba de humo (1 img)
+murray3d autogen-3d <image_url> <out.glb> [--mcp-config …]    # image-to-3D (Magnific MCP)
 murray3d autogen <prompts.json> [--out DIR] [--backend rest|agent]
     [--model flux-dev|mystic|imagen3] [--aspect 3:4] [--limit N] [--seed S]
-    [--resume/--no-resume] [--claude-model …] [--mcp-config …] [--json]
+    [--resume/--no-resume] [--make-3d] [--claude-model …] [--mcp-config …] [--json]
+# --make-3d: imagen -> GLB por agente + MCP de Magnific. ⚠️ ~580-1160 créditos/modelo.
 
 # Packs
 murray3d packs list [--json]
