@@ -47,6 +47,32 @@ def build_mesh_generator(settings, *, claude_model: str | None = None,
     return AgentMeshGenerator(claude_model=claude_model, mcp_config=mcp_config)
 
 
+# Coste aproximado en créditos (verificado con simulate_cost, ago-2026). Para el
+# valor exacto usa `simulate_cost`/`account_balance` del MCP de Magnific.
+IMAGE_CREDITS = {"flux-dev": 10, "seedream-5-pro": 100, "mystic": 100,
+                 "seedream-4-5": 100, "imagen3": 40}
+MESH_CREDITS = {"tripo-p1": 580, "tripo-v31": 580, "trellis-2": 730}
+_DEFAULT_IMAGE_CREDITS = 40
+_DEFAULT_MESH_CREDITS = 580
+
+
+def estimate_credits(n_jobs: int, image_model: str, *, make_3d: bool = False,
+                     mesh_model: str = "tripo-p1") -> dict:
+    """Estimación aproximada de créditos para ``n_jobs`` trabajos."""
+    per_img = IMAGE_CREDITS.get(image_model, _DEFAULT_IMAGE_CREDITS)
+    per_mesh = MESH_CREDITS.get(mesh_model, _DEFAULT_MESH_CREDITS) if make_3d else 0
+    img_total = per_img * n_jobs
+    mesh_total = per_mesh * n_jobs
+    return {
+        "jobs": n_jobs,
+        "per_image": per_img,
+        "per_mesh": per_mesh,
+        "image_total": img_total,
+        "mesh_total": mesh_total,
+        "total": img_total + mesh_total,
+    }
+
+
 def _effective_seed(base_seed: int | None, job: GenJob) -> int | None:
     """Deriva una semilla reproducible por trabajo (base + id) o None (aleatoria).
 

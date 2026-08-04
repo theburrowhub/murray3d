@@ -335,28 +335,42 @@ def batch_ai_publish_cmd(model_ids: list[int] = typer.Argument(None),
 
 @app.command("autogen-validate")
 def autogen_validate(prompts_file: Path,
+                     make_3d: bool = typer.Option(False, "--make-3d",
+                         help="Incluye el coste estimado del 3D"),
+                     model: str = typer.Option(None, "--model",
+                         help="Modelo de imagen para la estimación (default: el del JSON)"),
                      json_out: bool = typer.Option(False, "--json")):
-    """Valida un JSON de prompts y muestra cuántos trabajos saldrían y sus nombres."""
+    """Valida un JSON de prompts: cuántos trabajos, nombres y coste estimado."""
+    from .autogen import estimate_credits
     from .prompts import iter_jobs, load_prompt_doc
     doc = _run(lambda: load_prompt_doc(prompts_file))
     jobs = iter_jobs(doc)
+    ig = doc.automation_config.image_generation
+    img_model = model or ig.recommended_model
+    est = estimate_credits(len(jobs), img_model, make_3d=make_3d)
     if json_out:
         _dump({
             "figures": len(doc.figures),
             "jobs": len(jobs),
-            "model": doc.automation_config.image_generation.recommended_model,
-            "aspect_ratio": doc.automation_config.image_generation.aspect_ratio,
+            "model": img_model,
+            "aspect_ratio": ig.aspect_ratio,
+            "estimate_credits": est,
             "names": [j.output_name for j in jobs],
         })
         return
-    ig = doc.automation_config.image_generation
     typer.echo(f"Figuras: {len(doc.figures)}  ·  Trabajos (prompts): {len(jobs)}")
-    typer.echo(f"Modelo: {ig.recommended_model}  ·  aspect_ratio: {ig.aspect_ratio}")
+    typer.echo(f"Modelo: {img_model}  ·  aspect_ratio: {ig.aspect_ratio}")
     typer.echo("Ejemplos de nombres de salida:")
     for j in jobs[:10]:
         typer.echo(f"  [{j.id}] {j.character} → {j.output_name}.jpg")
     if len(jobs) > 10:
         typer.echo(f"  … y {len(jobs) - 10} más")
+    typer.echo(
+        f"\nCoste estimado (≈): imágenes {est['image_total']:,} cr"
+        + (f" + 3D {est['mesh_total']:,} cr = {est['total']:,} cr total"
+           if make_3d else f"  (sin --make-3d)")
+    )
+    typer.echo("  (aprox.; usa `mcp-check` para el MCP y `account_balance` para el saldo real)")
 
 
 @app.command("autogen")
