@@ -60,7 +60,7 @@ def run_gui(autogen_only: bool = False):
     tabs = QTabWidget()
     tabs.addTab(build_models_view(client, settings), "Modelos")
     tabs.addTab(build_packs_view(client, settings), "Packs")
-    tabs.addTab(build_autogen_view(settings), "Autogeneración")
+    tabs.addTab(build_autogen_view(settings, client=client), "Autogeneración")
     win.setCentralWidget(tabs)
     win.show()
 

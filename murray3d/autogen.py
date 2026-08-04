@@ -138,12 +138,14 @@ def run_autogen(doc: PromptDoc, generator: ImageGenerator, out_dir: Path, *,
             on_progress(i, total, job, "generando")
 
         if resume and _exists_nonempty(target):
-            results.append({"id": job.id, "name": name, "ok": True,
+            results.append({"id": job.id, "name": name, "title": job.title,
+                            "character": job.character, "ok": True,
                             "status": "skipped", "path": str(target)})
             _write_manifest(manifest_path, doc, results, total)
             continue
 
-        rec: dict = {"id": job.id, "name": name, "ok": True, "status": "ok"}
+        rec: dict = {"id": job.id, "name": name, "title": job.title,
+                     "character": job.character, "ok": True, "status": "ok"}
         image_url: str | None = None
         try:
             # --- Imagen: reutiliza la URL previa si ya está descargada ---
@@ -172,7 +174,8 @@ def run_autogen(doc: PromptDoc, generator: ImageGenerator, out_dir: Path, *,
 
             results.append(rec)
         except Exception as e:  # noqa: BLE001 - continuar el lote ante error por item
-            err = {"id": job.id, "name": name, "ok": False, "status": "error",
+            err = {"id": job.id, "name": name, "title": job.title,
+                   "character": job.character, "ok": False, "status": "error",
                    "error": str(e)}
             if _exists_nonempty(img_dest):  # la imagen pudo salir; el 3D no
                 err["path"] = str(img_dest)
@@ -206,3 +209,54 @@ def summarize(results: list[dict]) -> dict:
         "errors": len([r for r in results if r["status"] == "error"]),
         "total": len(results),
     }
+
+
+# --- Exportación a 3DBundle (la web de murray3d) -----------------------------
+
+def load_manifest(out_dir) -> list[dict]:
+    """Lee la lista de resultados del manifest.json de un directorio de salida."""
+    p = Path(out_dir) / "manifest.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("results", [])
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def exportable_results(results: list[dict]) -> list[dict]:
+    """Resultados con un .glb existente en disco, listos para subir a 3DBundle."""
+    out = []
+    for r in results:
+        glb = r.get("glb_path")
+        if glb and Path(glb).exists() and Path(glb).stat().st_size > 0:
+            out.append(r)
+    return out
+
+
+def export_to_3dbundle(client, results: list[dict], *, on_progress=None,
+                       as_draft: bool = True) -> list[dict]:
+    """Sube a 3DBundle cada GLB generado como modelo, con su imagen de miniatura.
+
+    Igual que la subida de la app principal: sube el fichero (con thumbnail) y lo
+    deja como **borrador** (`published=False`) para revisarlo/publicarlo después.
+    Continúa ante errores por elemento. ``client`` es un ``api.Client``.
+    """
+    items = exportable_results(results)
+    out: list[dict] = []
+    total = len(items)
+    for i, r in enumerate(items):
+        if on_progress:
+            on_progress(i, total, r, "subiendo")
+        try:
+            glb = Path(r["glb_path"])
+            jpg = r.get("path")
+            thumb = Path(jpg) if jpg and Path(jpg).exists() else None
+            title = r.get("title") or r.get("name") or glb.stem
+            m = client.upload_model(glb, title=title, thumbnail=thumb)
+            if as_draft:
+                m = client.update_model(m.id, published=False)
+            out.append({"id": r.get("id"), "name": r.get("name"), "ok": True,
+                        "model_id": m.id, "title": m.title})
+        except Exception as e:  # noqa: BLE001 - continuar el lote ante error por item
+            out.append({"id": r.get("id"), "name": r.get("name"), "ok": False,
+                        "error": str(e)})
+    return out

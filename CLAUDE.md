@@ -64,6 +64,7 @@ murray3d mcp-check                                        # ¿MCP de Magnific au
 murray3d autogen-validate <prompts.json>                 # cuántas imágenes y nombres
 murray3d autogen-image "<prompt>" <out.jpg> [--aspect 3:4]   # prueba de humo (1 img)
 murray3d autogen-3d <image_url> <out.glb> [--mcp-config …]    # image-to-3D (models3d_generate)
+murray3d autogen-export <out_dir> [--yes] [--published]       # sube los GLB a 3DBundle (borrador)
 murray3d autogen <prompts.json> [--out DIR]
     [--model flux-dev|seedream-5-pro|…] [--aspect 3:4] [--limit N] [--seed S]
     [--resume/--no-resume] [--make-3d] [--claude-model …] [--mcp-config …] [--json]

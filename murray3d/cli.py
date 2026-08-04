@@ -491,6 +491,47 @@ def autogen_3d(image_url: str, out: Path,
     _dump({"model_url": urls[0], "path": str(out)})
 
 
+@app.command("autogen-export")
+def autogen_export(out_dir: Path,
+                   yes: bool = typer.Option(False, "--yes"),
+                   published: bool = typer.Option(False, "--published",
+                       help="Publicar al subir (por defecto: borrador)"),
+                   json_out: bool = typer.Option(False, "--json")):
+    """Sube a 3DBundle los GLB generados en `out_dir` (con su imagen de miniatura).
+
+    Lee el manifest.json y sube cada modelo como la app principal: por defecto como
+    BORRADOR, para revisarlo/publicarlo luego. Requiere MURRAY_API_KEY.
+    """
+    from .autogen import exportable_results, export_to_3dbundle, load_manifest
+    results = load_manifest(out_dir)
+    items = exportable_results(results)
+    if not items:
+        typer.echo(f"No hay GLB que exportar en {out_dir} (¿ejecutaste con --make-3d?).")
+        raise typer.Exit(code=1)
+    with _session() as c:
+        typer.echo(f"Exportando {len(items)} modelos a 3DBundle "
+                   f"({'publicados' if published else 'borrador'})…")
+        if not yes:
+            typer.confirm("¿Continuar?", abort=True)
+
+        def prog(i, total, r, phase):
+            typer.echo(f"  [{i + 1}/{total}] {phase}: {r.get('name')}")
+
+        out = export_to_3dbundle(c, results, on_progress=prog, as_draft=not published)
+        ok = [r for r in out if r["ok"]]
+        fail = [r for r in out if not r["ok"]]
+        if json_out:
+            _dump(out)
+        else:
+            typer.echo(f"Hecho: {len(ok)} subidos, {len(fail)} con error.")
+            for r in ok:
+                typer.echo(f"  ✔ [{r['model_id']}] {r['title']}")
+            for r in fail:
+                typer.echo(f"  ✗ {r.get('name')}: {r['error']}")
+        if fail:
+            raise typer.Exit(code=1)
+
+
 @app.command("mcp-check")
 def mcp_check():
     """Comprueba si el MCP de Magnific está autenticado en `claude` (para autogen)."""

@@ -125,6 +125,21 @@ Pestaña **Autogeneración**:
    mismo JSON con el mismo directorio de salida: las miniaturas ya hechas salen
    marcadas (`✔ 3D` / `✔ img`) y **Generar** continúa donde iba (salta lo hecho,
    reutiliza la URL de imagen para reintentar solo el 3D si hiciera falta).
+6. **Exportar a 3DBundle** (solo en la app completa, `make run`): sube los `.glb`
+   generados a la web de murray3d **como borrador**, con su imagen como miniatura
+   —igual que la subida de la pestaña Modelos—. Luego los revisas/publicas desde
+   Modelos ("Publicar con IA"). El botón se habilita cuando hay `.glb` en la
+   carpeta de salida. (En `--autogen-only` está deshabilitado: no hay sesión de
+   3DBundle.)
+
+## 6. Exportar a 3DBundle por CLI
+
+```bash
+# Sube los GLB del manifest como borrador (con miniatura). Requiere MURRAY_API_KEY.
+murray3d autogen-export ./salida --yes
+# Publicar directamente al subir:
+murray3d autogen-export ./salida --yes --published
+```
 
 ## 5. Formato del JSON de prompts
 

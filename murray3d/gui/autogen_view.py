@@ -13,6 +13,9 @@ from pathlib import Path
 from ..autogen import (
     build_image_generator,
     build_mesh_generator,
+    exportable_results,
+    export_to_3dbundle,
+    load_manifest,
     run_autogen,
     summarize,
 )
@@ -20,7 +23,7 @@ from ..mcp_health import ensure_magnific_auth
 from ..prompts import PromptError, iter_jobs, load_prompt_doc
 
 
-def build_autogen_view(settings):
+def build_autogen_view(settings, client=None):
     from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
@@ -93,17 +96,24 @@ def build_autogen_view(settings):
     split.setSizes([560, 460])
     outer.addWidget(split, 1)
 
-    # --- Fila inferior: generar + progreso ---
+    # --- Fila inferior: generar + exportar + progreso ---
     bottom = QHBoxLayout()
     btn_gen = QPushButton("Generar")
     btn_gen.setEnabled(False)
+    btn_export = QPushButton("Exportar a 3DBundle")
+    btn_export.setEnabled(False)
+    if client is None:
+        btn_export.setToolTip("Abre la app completa (con API key de 3DBundle) para exportar.")
+    else:
+        btn_export.setToolTip("Sube los .glb generados a 3DBundle como borrador, con su imagen de miniatura.")
     progress = QProgressBar(); progress.setTextVisible(True)
     status = QLabel("")
-    bottom.addWidget(btn_gen); bottom.addWidget(progress, 1); bottom.addWidget(status)
+    bottom.addWidget(btn_gen); bottom.addWidget(btn_export)
+    bottom.addWidget(progress, 1); bottom.addWidget(status)
     outer.addLayout(bottom)
 
     state = {"doc": None, "jobs": [], "row_by_id": {}, "running": False,
-             "worker_ref": None, "viewer": None}
+             "worker_ref": None, "export_ref": None, "viewer": None}
 
     def selected_model():
         return None if model.currentIndex() == 0 else model.currentText()
@@ -187,6 +197,7 @@ def build_autogen_view(settings):
         if base is None:
             return 0
         done = 0
+        glb_done = 0
         for j in state["jobs"]:
             r = state["row_by_id"].get(j.id)
             if r is None:
@@ -194,9 +205,11 @@ def build_autogen_view(settings):
             glb = base / f"{j.output_name}.glb"
             jpg = base / f"{j.output_name}.jpg"
             if glb.exists() and glb.stat().st_size > 0:
-                table.setItem(r, 4, QTableWidgetItem("✔ 3D")); done += 1
+                table.setItem(r, 4, QTableWidgetItem("✔ 3D")); done += 1; glb_done += 1
             elif jpg.exists() and jpg.stat().st_size > 0:
                 table.setItem(r, 4, QTableWidgetItem("✔ img")); done += 1
+        if client is not None and not state["running"]:
+            btn_export.setEnabled(glb_done > 0)
         return done
 
     def refresh_jobs():
@@ -282,13 +295,13 @@ def build_autogen_view(settings):
         for r in results:
             set_row_status(r["id"], {"ok": "✔", "skipped": "↷ saltado",
                                      "error": "✗ " + r.get("error", "")[:40]}[r["status"]])
-        mark_existing()  # distingue img / 3D según ficheros
         s = summarize(results)
         progress.setValue(progress.maximum())
         status.setText(f"Hecho: {s['ok']} ok · {s['skipped']} saltados · {s['errors']} errores")
         state["running"] = False
         state["worker_ref"] = None
         btn_gen.setEnabled(True)
+        mark_existing()  # distingue img/3D y habilita Exportar si hay .glb
         preview_selected()
 
     def on_failed(msg):
@@ -333,9 +346,86 @@ def build_autogen_view(settings):
         state["worker_ref"] = w  # retener hasta que termine
         pool.start(w)
 
+    # --- Exportación a 3DBundle ---
+    class ExportSignals(QObject):
+        progress = Signal(int, int, int, str)  # done, total, mini_id, name
+        finished = Signal(object)
+        failed = Signal(str)
+
+    class ExportWorker(QRunnable):
+        def __init__(self, results):
+            super().__init__()
+            self.setAutoDelete(False)
+            self.signals = ExportSignals()
+            self._results = results
+
+        @Slot()
+        def run(self):
+            def on_prog(i, total, r, phase):
+                self.signals.progress.emit(i, total, r.get("id", -1), r.get("name", ""))
+            try:
+                out = export_to_3dbundle(client, self._results, on_progress=on_prog)
+                self.signals.finished.emit(out)
+            except Exception as e:  # noqa: BLE001
+                self.signals.failed.emit(str(e))
+
+    def on_export_progress(done, total, mini_id, name):
+        progress.setMaximum(total); progress.setValue(done)
+        set_row_status(mini_id, "subiendo…")
+        status.setText(f"Exportando [{done + 1}/{total}] {name}")
+
+    def on_export_finished(out):
+        ok = [r for r in out if r["ok"]]
+        for r in out:
+            if r["ok"]:
+                set_row_status(r["id"], f"☁ 3DBundle #{r['model_id']}")
+            else:
+                set_row_status(r["id"], "✗ export: " + r.get("error", "")[:30])
+        progress.setValue(progress.maximum())
+        status.setText(f"Exportados {len(ok)}/{len(out)} a 3DBundle (borradores).")
+        state["running"] = False
+        state["export_ref"] = None
+        btn_gen.setEnabled(bool(state["jobs"]))
+        mark_existing()
+
+    def on_export_failed(msg):
+        QMessageBox.critical(root, "Error de exportación", msg)
+        status.setText("Error de exportación")
+        state["running"] = False
+        state["export_ref"] = None
+        btn_gen.setEnabled(bool(state["jobs"]))
+        btn_export.setEnabled(True)
+
+    def export_to_bundle():
+        if client is None:
+            return
+        base = out_base()
+        results = load_manifest(base) if base else []
+        items = exportable_results(results)
+        if not items:
+            QMessageBox.information(root, "Exportar",
+                                    "No hay .glb generados en la carpeta de salida.")
+            return
+        if QMessageBox.question(
+            root, "Exportar a 3DBundle",
+            f"Se subirán {len(items)} modelos a 3DBundle como BORRADOR "
+            "(con su imagen de miniatura). ¿Continuar?"
+        ) != QMessageBox.Yes:
+            return
+        state["running"] = True
+        btn_export.setEnabled(False); btn_gen.setEnabled(False)
+        status.setText("Exportando a 3DBundle…")
+        w = ExportWorker(results)
+        w.signals.progress.connect(on_export_progress, Qt.QueuedConnection)
+        w.signals.finished.connect(on_export_finished, Qt.QueuedConnection)
+        w.signals.failed.connect(on_export_failed, Qt.QueuedConnection)
+        state["export_ref"] = w
+        pool.start(w)
+
     btn_load.clicked.connect(load_json)
     btn_browse.clicked.connect(browse_out)
     btn_gen.clicked.connect(generate)
+    btn_export.clicked.connect(export_to_bundle)
     model.currentIndexChanged.connect(lambda *_: refresh_jobs())
     out_dir.editingFinished.connect(lambda: state["jobs"] and mark_existing())
     table.itemSelectionChanged.connect(preview_selected)
