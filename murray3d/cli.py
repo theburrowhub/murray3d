@@ -11,7 +11,6 @@ from .ai import AiError
 from .api import ApiError, Client
 from .config import ConfigError, load_settings
 from .convert import ConvertError
-from .freepik import FreepikError
 from .mesh_gen import MeshGenError
 from .prompts import PromptError
 from .render import RenderError
@@ -35,17 +34,17 @@ def _run(fn):
     try:
         return fn()
     except (ApiError, ConfigError, RenderError, AiError, ConvertError,
-            PromptError, FreepikError, AgentGenError, MeshGenError) as e:
+            PromptError, AgentGenError, MeshGenError) as e:
         typer.echo(str(e))
         raise typer.Exit(code=1)
 
 
-def _make_generator(backend: str, settings, *, claude_model: str | None = None,
+def _make_generator(settings, *, claude_model: str | None = None,
                     mcp_config: str | None = None):
-    """Construye el generador de imágenes según el backend (delegando en autogen)."""
-    from .autogen import build_generator
-    return build_generator(backend, settings, claude_model=claude_model,
-                           mcp_config=mcp_config)
+    """Construye el generador de imágenes (agente `claude` + MCP de Magnific)."""
+    from .autogen import build_image_generator
+    return build_image_generator(settings, claude_model=claude_model,
+                                 mcp_config=mcp_config)
 
 
 def _make_mesh_generator(settings, *, claude_model: str | None = None,
@@ -362,31 +361,29 @@ def autogen_validate(prompts_file: Path,
 @app.command("autogen")
 def autogen_cmd(prompts_file: Path,
                 out: Path = typer.Option(None, "--out", help="Directorio de salida"),
-                backend: str = typer.Option("rest", "--backend",
-                    help="rest (API directa) | agent (claude + MCP de Freepik)"),
                 model: str = typer.Option(None, "--model",
-                    help="Modelo de imagen: flux-dev|mystic|imagen3 (default: el del JSON)"),
+                    help="Modelo de imagen (mode de Magnific): flux-dev|seedream-5-pro|… "
+                         "(default: el del JSON)"),
                 aspect: str = typer.Option(None, "--aspect",
                     help="Relación de aspecto, p. ej. 3:4 (default: la del JSON)"),
                 limit: int = typer.Option(None, "--limit", help="Procesa solo los N primeros"),
                 seed: int = typer.Option(None, "--seed", help="Semilla base reproducible"),
                 resume: bool = typer.Option(True, "--resume/--no-resume",
-                    help="Salta los que ya tengan imagen en el directorio"),
+                    help="Salta los que ya tengan imagen (o GLB con --make-3d)"),
                 make_3d: bool = typer.Option(False, "--make-3d",
-                    help="Genera también la malla 3D (.glb) vía agente + MCP de Magnific"),
+                    help="Genera también la malla 3D (.glb) vía `models3d_generate`"),
                 claude_model: str = typer.Option(None, "--claude-model",
-                    help="(backend agent / 3D) modelo de Claude: opus|sonnet|haiku|fable"),
+                    help="Modelo de Claude para el agente: opus|sonnet|haiku|fable"),
                 mcp_config: str = typer.Option(None, "--mcp-config",
-                    help="(agent / 3D) fichero JSON de configuración del MCP"),
+                    help="Fichero JSON de configuración del MCP (si no está ya en `claude`)"),
                 json_out: bool = typer.Option(False, "--json")):
     """Autogenera una imagen por prompt del JSON (procesa en serie, reanudable).
 
-    Diseñado para lotes grandes: uno a uno, escribe manifest.json incremental y
-    continúa ante errores por elemento. `rest` llama a la API de Freepik; `agent`
-    usa `claude` + MCP como agente simple. Con `--make-3d` añade el paso
-    image-to-3D (GLB) por el MCP de Magnific.
+    Usa el CLI `claude` + el MCP de Magnific (`images_generate`). Diseñado para
+    lotes: uno a uno, manifest.json incremental, continúa ante errores. Con
+    `--make-3d` añade el paso image-to-3D (GLB) por `models3d_generate`.
 
-    ⚠️ `--make-3d` gasta ~580–1160 créditos por modelo: úsalo con `--limit`.
+    ⚠️ `--make-3d` gasta ~580 créditos por modelo: úsalo con `--limit`.
     """
     from .autogen import run_autogen, summarize
     from .prompts import load_prompt_doc
@@ -394,14 +391,14 @@ def autogen_cmd(prompts_file: Path,
     doc = _run(lambda: load_prompt_doc(prompts_file))
     settings = _run(lambda: load_settings(require_api_key=False))
     out_dir = Path(out) if out else (settings.autogen_dir / Path(prompts_file).stem)
-    gen = _run(lambda: _make_generator(backend, settings, claude_model=claude_model,
+    gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
                                        mcp_config=mcp_config))
     mesh = None
     if make_3d:
         mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
                                                  mcp_config=mcp_config))
 
-    typer.echo(f"Autogeneración [{backend}{' +3D' if make_3d else ''}] → {out_dir}")
+    typer.echo(f"Autogeneración{' +3D' if make_3d else ''} → {out_dir}")
 
     def prog(i, total, job, phase):
         typer.echo(f"  [{i + 1}/{total}] {phase}: {job.output_name}")
@@ -430,15 +427,15 @@ def autogen_cmd(prompts_file: Path,
 
 @app.command("autogen-image")
 def autogen_image(prompt: str, out: Path,
-                  backend: str = typer.Option("rest", "--backend"),
-                  model: str = typer.Option("flux-dev", "--model"),
+                  model: str = typer.Option("flux-dev", "--model",
+                      help="mode de Magnific: flux-dev|seedream-5-pro|…"),
                   aspect: str = typer.Option("3:4", "--aspect"),
                   seed: int = typer.Option(None, "--seed"),
                   claude_model: str = typer.Option(None, "--claude-model"),
                   mcp_config: str = typer.Option(None, "--mcp-config")):
     """Prueba de humo: genera UNA imagen desde un prompt y la guarda en `out`."""
     settings = _run(lambda: load_settings(require_api_key=False))
-    gen = _run(lambda: _make_generator(backend, settings, claude_model=claude_model,
+    gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
                                        mcp_config=mcp_config))
     try:
         urls = _run(lambda: gen.generate(prompt, model=model, aspect_ratio=aspect,

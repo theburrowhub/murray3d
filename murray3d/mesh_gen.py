@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .agent_gen import default_runner
 from .ai import _extract_inner_json
-from .freepik import download_url
+from .download import download_url
 
 # Prefijo de herramientas del MCP de Magnific (según el nombre del server en la
 # config MCP; examples/magnific-mcp.json lo llama "magnific").

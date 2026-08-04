@@ -9,8 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..autogen import (
-    BACKENDS,
-    build_generator,
+    build_image_generator,
     build_mesh_generator,
     run_autogen,
     summarize,
@@ -38,14 +37,13 @@ def build_autogen_view(settings):
 
     # --- Fila de configuración ---
     cfg = QHBoxLayout()
-    backend = QComboBox(); backend.addItems(list(BACKENDS))
-    model = QComboBox(); model.addItems(["(del JSON)", "flux-dev", "mystic", "imagen3"])
+    model = QComboBox(); model.addItems(["(del JSON)", "flux-dev", "seedream-5-pro",
+                                         "mystic", "imagen3"])
     aspect = QLineEdit(); aspect.setPlaceholderText("aspect (3:4)"); aspect.setMaximumWidth(90)
     limit = QSpinBox(); limit.setMaximum(100000); limit.setSpecialValueText("todos")
     seed = QSpinBox(); seed.setMaximum(2_000_000_000); seed.setSpecialValueText("aleatoria")
     make3d = QCheckBox("También 3D (Magnific MCP)")
-    make3d.setToolTip("Genera .glb por agente + MCP de Magnific. ⚠️ ~580–1160 créditos/modelo.")
-    cfg.addWidget(QLabel("Backend:")); cfg.addWidget(backend)
+    make3d.setToolTip("Genera .glb por agente + MCP de Magnific. ⚠️ ~580 créditos/modelo.")
     cfg.addWidget(QLabel("Modelo:")); cfg.addWidget(model)
     cfg.addWidget(QLabel("Aspect:")); cfg.addWidget(aspect)
     cfg.addWidget(QLabel("Límite:")); cfg.addWidget(limit)
@@ -206,16 +204,16 @@ def build_autogen_view(settings):
             return
         mk3d = make3d.isChecked()
         try:
-            generator = build_generator(backend.currentText(), settings)
+            generator = build_image_generator(settings)
             mesh = build_mesh_generator(settings) if mk3d else None
-        except Exception as e:  # noqa: BLE001 - p. ej. falta FREEPIK_API_KEY
+        except Exception as e:  # noqa: BLE001
             QMessageBox.critical(root, "Configuración", str(e))
             return
         if mk3d:
             n = limit.value() or len(state["jobs"])
             if QMessageBox.question(
                 root, "Generar 3D",
-                f"El 3D gasta ~580–1160 créditos por modelo (~{n} modelos). ¿Continuar?"
+                f"El 3D gasta ~580 créditos por modelo (~{n} modelos). ¿Continuar?"
             ) != QMessageBox.Yes:
                 return
         state["running"] = True
@@ -234,7 +232,6 @@ def build_autogen_view(settings):
     btn_load.clicked.connect(load_json)
     btn_browse.clicked.connect(browse_out)
     btn_gen.clicked.connect(generate)
-    backend.currentIndexChanged.connect(lambda *_: None)
     model.currentIndexChanged.connect(lambda *_: refresh_jobs())
 
     return root

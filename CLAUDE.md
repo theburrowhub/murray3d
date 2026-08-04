@@ -16,14 +16,12 @@ cp .env.dist .env   # y rellena MURRAY_API_KEY
   `.venv/bin/murray3d whoami` (debe imprimir el perfil).
 - El flujo "IA" ejecuta el binario **`claude`** como subproceso: debe estar en el
   `PATH` y autenticado.
-- **Autogeneración** (comandos `autogen*`): genera imágenes desde un JSON de
-  prompts. Necesita `FREEPIK_API_KEY` en `.env` (backend `rest`) o el MCP de
-  Freepik autenticado en `claude` (backend `agent`). No requiere la clave de
-  3DBundle. Detalles en `docs/autogen.md`.
-- **Malla 3D** (`--make-3d`, `autogen-3d`): la REST API no hace 3D; sí el **MCP de
-  Magnific** (`mcp.magnific.com`, OAuth) con `models3d_generate` (→ GLB). Va por
-  agente `claude`; requiere el MCP de Magnific autenticado (`/mcp`) o
-  `--mcp-config examples/magnific-mcp.json`. ⚠️ ~580-1160 créditos por modelo.
+- **Autogeneración** (comandos `autogen*`): genera imágenes (y con `--make-3d`,
+  malla 3D) desde un JSON de prompts. No usa APIs REST: reutiliza el CLI `claude`
+  + el **MCP de Magnific** (`images_generate`, `models3d_generate`). Requiere el
+  MCP de Magnific autenticado en `claude` (`/mcp` → OAuth, o `claude mcp add`), o
+  `--mcp-config examples/magnific-mcp.json`. No requiere la clave de 3DBundle ni
+  ninguna API key aparte. Detalles en `docs/autogen.md`. ⚠️ 3D ~580 créditos/modelo.
 
 ## Modelo mental
 
@@ -61,14 +59,14 @@ murray3d ai-publish <id> [--yes] [--model …]   # ai-generate + (confirmar) + p
 murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo como borrador
 murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model …] [--json]
 
-# Autogeneración desde JSON de prompts — ver docs/autogen.md
+# Autogeneración desde JSON de prompts (claude + MCP de Magnific) — ver docs/autogen.md
 murray3d autogen-validate <prompts.json>                 # cuántas imágenes y nombres
 murray3d autogen-image "<prompt>" <out.jpg> [--aspect 3:4]   # prueba de humo (1 img)
-murray3d autogen-3d <image_url> <out.glb> [--mcp-config …]    # image-to-3D (Magnific MCP)
-murray3d autogen <prompts.json> [--out DIR] [--backend rest|agent]
-    [--model flux-dev|mystic|imagen3] [--aspect 3:4] [--limit N] [--seed S]
+murray3d autogen-3d <image_url> <out.glb> [--mcp-config …]    # image-to-3D (models3d_generate)
+murray3d autogen <prompts.json> [--out DIR]
+    [--model flux-dev|seedream-5-pro|…] [--aspect 3:4] [--limit N] [--seed S]
     [--resume/--no-resume] [--make-3d] [--claude-model …] [--mcp-config …] [--json]
-# --make-3d: imagen -> GLB por agente + MCP de Magnific. ⚠️ ~580-1160 créditos/modelo.
+# --make-3d: imagen -> GLB por models3d_generate. ⚠️ ~580 créditos/modelo.
 
 # Packs
 murray3d packs list [--json]

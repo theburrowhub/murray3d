@@ -5,8 +5,8 @@ un ``manifest.json`` incremental tras cada trabajo (para reanudar si se corta),
 y un error en un prompt NO aborta el lote (se registra y se continúa).
 
 El generador se pasa como dependencia (protocolo ``ImageGenerator``); en producción
-es ``FreepikClient``, en tests un doble. Así el motor de lotes queda desacoplado
-del proveedor y se puede enchufar un image-to-3D en el futuro.
+es ``AgentImageGenerator`` (`claude` + MCP de Magnific), en tests un doble. Así el
+motor de lotes queda desacoplado del proveedor.
 """
 from __future__ import annotations
 
@@ -31,41 +31,26 @@ class MeshGenerator(Protocol):
     def download(self, url: str, dest: Path) -> Path: ...
 
 
-BACKENDS = ("rest", "agent")
+def build_image_generator(settings, *, claude_model: str | None = None,
+                          mcp_config: str | None = None) -> ImageGenerator:
+    """Generador de imágenes: `claude` + MCP de Magnific (`images_generate`).
+
+    Única vía: murray3d no usa APIs REST, reutiliza el CLI `claude` y su MCP."""
+    from .agent_gen import AgentImageGenerator
+    return AgentImageGenerator(claude_model=claude_model, mcp_config=mcp_config)
 
 
 def build_mesh_generator(settings, *, claude_model: str | None = None,
                          mcp_config: str | None = None) -> MeshGenerator:
-    """Generador de malla 3D (agente + MCP de Magnific). Es la única vía: no hay
-    REST para 3D. Requiere el MCP de Magnific autenticado en `claude`."""
+    """Generador de malla 3D (agente + MCP de Magnific, `models3d_generate`)."""
     from .mesh_gen import AgentMeshGenerator
     return AgentMeshGenerator(claude_model=claude_model, mcp_config=mcp_config)
-
-
-def build_generator(backend: str, settings, *, claude_model: str | None = None,
-                    mcp_config: str | None = None) -> ImageGenerator:
-    """Construye el generador según el backend (compartido por CLI y GUI).
-
-    - ``rest``: API de Freepik directa (necesita FREEPIK_API_KEY).
-    - ``agent``: `claude` + MCP de Freepik (agente simple).
-    """
-    if backend == "rest":
-        from .config import require_freepik
-        from .freepik import FreepikClient
-        key = require_freepik(settings)
-        return FreepikClient(key, base_url=settings.freepik_base_url,
-                             api_header=settings.freepik_header)
-    if backend == "agent":
-        from .agent_gen import AgentImageGenerator
-        return AgentImageGenerator(claude_model=claude_model, mcp_config=mcp_config)
-    from .config import ConfigError
-    raise ConfigError(f"Backend desconocido: {backend!r}. Usa 'rest' o 'agent'.")
 
 
 def _effective_seed(base_seed: int | None, job: GenJob) -> int | None:
     """Deriva una semilla reproducible por trabajo (base + id) o None (aleatoria).
 
-    Freepik exige seed en 1..4294967295; se acota a ese rango.
+    Se acota a 1..4294967295 (rango habitual de seed en los generadores).
     """
     if base_seed is None:
         return None

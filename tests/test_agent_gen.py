@@ -12,6 +12,7 @@ from murray3d.agent_gen import (
 def test_build_gen_prompt_includes_params():
     p = build_gen_prompt("un goku", "flux-dev", "3:4")
     assert "flux-dev" in p and "3:4" in p and "un goku" in p
+    assert "images_generate" in p
     assert "image_urls" in p
 
 
@@ -35,6 +36,7 @@ def test_generate_parses_agent_json():
     assert "--model" in cmd and "haiku" in cmd
     assert "--mcp-config" in cmd and "/tmp/mcp.json" in cmd
     assert "--allowedTools" in cmd
+    assert "mcp__magnific" in cmd
 
 
 def test_generate_raises_when_no_urls():

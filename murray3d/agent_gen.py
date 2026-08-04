@@ -1,23 +1,18 @@
-"""Backend de generación por **agente simple**: `claude` + MCP de Freepik.
+"""Generación de imágenes por **agente**: `claude` + MCP de Magnific.
 
-En vez de llamar a la API REST de Freepik, este backend lanza el binario
-``claude`` como subproceso (igual que ``ai.py`` para los metadatos) conectado al
-**servidor MCP de Freepik**. El agente recibe el prompt, invoca la herramienta de
-generación del MCP, espera a que termine y devuelve las URLs resultantes como
-JSON. murray3d las descarga.
-
-Esto da sentido al MCP dentro de la app: el agente abstrae la elección de
-endpoint, el mapeo de parámetros y el polling; si Freepik cambia su API, el MCP
-oficial se actualiza sin tocar murray3d.
+murray3d no llama a ninguna API REST: reutiliza el binario ``claude`` (el mismo
+patrón que ``ai.py`` para los metadatos) conectado al **MCP de Magnific**. El
+agente recibe el prompt, invoca `images_generate`, espera (`creations_wait`) y
+devuelve la URL de la imagen. murray3d la descarga.
 
 Requisitos en tiempo de ejecución:
 - ``claude`` en el PATH y autenticado.
-- El MCP de Freepik añadido y autenticado en el CLI ``claude`` (``claude mcp add``
-  o ``/mcp``), o pasado por ``--mcp-config`` (fichero JSON con ``mcpServers``).
+- El **MCP de Magnific** disponible para `claude` (`/mcp` → login OAuth, o
+  ``claude mcp add --transport http magnific https://mcp.magnific.com``), o su
+  transporte vía ``--mcp-config``.
 
 Implementa el protocolo ``autogen.ImageGenerator`` (``generate`` + ``download``),
-así que es intercambiable con ``FreepikClient`` detrás del motor de lotes.
-El ``runner`` es inyectable para tests (sin subproceso ni red).
+intercambiable con cualquier otro generador. El ``runner`` es inyectable (tests).
 """
 from __future__ import annotations
 
@@ -26,10 +21,11 @@ import subprocess
 from pathlib import Path
 
 from .ai import _extract_inner_json  # reutilizamos el parseo del wrapper de claude
-from .freepik import download_url
+from .download import download_url
 
-# Herramientas MCP permitidas por defecto (todas las del server de Freepik).
-DEFAULT_ALLOWED_TOOLS = "mcp__freepik"
+# Herramientas MCP permitidas por defecto: todo el server de Magnific.
+DEFAULT_ALLOWED_TOOLS = "mcp__magnific"
+DEFAULT_IMAGE_MODEL = "flux-dev"  # `mode` de Magnific (flux-dev, seedream-5-pro, …)
 
 AGENT_JSON_SCHEMA = {
     "type": "object",
@@ -47,15 +43,16 @@ class AgentGenError(Exception):
 
 def build_gen_prompt(prompt: str, model: str, aspect_ratio: str) -> str:
     return (
-        "Usa las herramientas del servidor MCP de Freepik para generar UNA imagen "
-        "a partir del siguiente prompt. Si la generación es asíncrona, espera "
-        "(haz polling) hasta que termine y recoge las URLs resultantes.\n\n"
-        f"Modelo de imagen preferido: {model}\n"
-        f"Relación de aspecto: {aspect_ratio}\n"
+        "Genera UNA imagen usando la herramienta `images_generate` del MCP de "
+        "Magnific.\n"
+        f"Modelo (`mode`): {model}\n"
+        f"Relación de aspecto (`aspectRatio`): {aspect_ratio}\n"
+        "count: 1\n\n"
         f"Prompt:\n{prompt}\n\n"
-        "Cuando tengas el resultado, devuelve SOLO el objeto JSON pedido con "
-        "`image_urls` (la lista de URLs de las imágenes generadas). No descargues "
-        "las imágenes; solo devuelve sus URLs."
+        "Espera a que termine con `creations_wait` y toma la URL de resultado "
+        "(`url`). Devuelve SOLO el objeto JSON pedido con `image_urls` (la lista "
+        "de URLs de las imágenes generadas). No descargues las imágenes; solo "
+        "devuelve sus URLs."
     )
 
 
@@ -71,7 +68,7 @@ def default_runner(cmd: list[str], cwd: Path | None = None) -> str:
 
 
 class AgentImageGenerator:
-    """Genera imágenes vía `claude -p` + MCP de Freepik (agente simple)."""
+    """Genera imágenes vía `claude -p` + MCP de Magnific (`images_generate`)."""
 
     def __init__(self, runner=None, claude_model: str | None = None,
                  mcp_config: str | None = None,
@@ -97,7 +94,7 @@ class AgentImageGenerator:
         cmd += self.extra_args
         return cmd
 
-    def generate(self, prompt: str, *, model: str = "flux-dev",
+    def generate(self, prompt: str, *, model: str = DEFAULT_IMAGE_MODEL,
                  aspect_ratio: str = "1:1", seed: int | None = None,
                  negative_prompt: str | None = None) -> list[str]:
         # seed/negative_prompt se ignoran aquí: el agente/MCP decide los detalles.

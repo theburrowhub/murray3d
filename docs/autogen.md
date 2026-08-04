@@ -1,111 +1,79 @@
 # Autogeneración desde JSON de prompts
 
-Genera imágenes de miniaturas **en serie** a partir de un JSON con cientos de
-prompts bien ordenados, usando **Freepik**. Pensado para lotes grandes: procesa
-de uno en uno, escribe un `manifest.json` incremental (reanudable) y continúa
-ante errores por elemento.
+Genera imágenes de miniaturas **y su malla 3D** en serie a partir de un JSON con
+cientos de prompts bien ordenados. Pensado para lotes grandes: procesa de uno en
+uno, escribe un `manifest.json` incremental (reanudable) y continúa ante errores
+por elemento.
 
-> **Sobre el 3D — dónde vive cada cosa (verificado):**
-> - La **REST API** de Freepik/Magnific **solo genera imágenes** (flux-dev,
->   Mystic, Seedream, Imagen3) y upscaling. **No hay endpoint REST de 3D.**
-> - El **MCP de Freepik** (`api.freepik.com/mcp`, API key) tampoco: imagen
->   (Mystic), vídeo (Kling), iconos, stock.
-> - El **MCP de Magnific** (`mcp.magnific.com`, **OAuth**) **sí** expone
->   `models3d_generate` (image-to-3D → **GLB**, con Tripo/Trellis).
->
-> Por eso el pipeline es: **prompt → imagen** (REST o agente) **→ malla 3D**
-> (`--make-3d`, solo por agente + MCP de Magnific) **→** subir a 3DBundle.
-> ⚠️ Cada 3D gasta **~580–1160 créditos**; usa `--make-3d` con `--limit`.
+**Arquitectura:** igual que "Publicar con IA", murray3d **no llama a ninguna API
+REST**. Reutiliza el binario **`claude`** conectado al **MCP de Magnific**:
+`images_generate` para la imagen y `models3d_generate` para el 3D. Un solo camino,
+sin API keys aparte.
 
-## 1. Suministrar la clave de Freepik
+> **Pipeline:** prompt → **imagen** (`images_generate`) → **malla 3D**
+> (`models3d_generate` → GLB, con `--make-3d`) → subir a 3DBundle.
+> ⚠️ Cada 3D gasta **~580 créditos**; usa `--make-3d` con `--limit`.
 
-1. Entra en el **dashboard de desarrolladores de Freepik**:
-   <https://www.freepik.com/developers/dashboard> y genera una **API key**.
-2. Añádela a tu `.env` (o expórtala como variable de entorno):
+## 1. Requisito: el MCP de Magnific en `claude`
 
-   ```bash
-   # en .env (git-ignored, nunca se sube)
-   FREEPIK_API_KEY=fpsk_tu_clave_aqui
-   ```
-
-   Variables opcionales:
-   - `FREEPIK_BASE_URL` (default `https://api.freepik.com/v1`; alternativa tras el
-     rebrand: `https://api.magnific.com/v1`).
-   - `FREEPIK_API_HEADER` (default `x-freepik-api-key`; alternativa `x-magnific-api-key`).
-
-La clave se consume por **créditos** de tu cuenta Freepik. Cada imagen gasta
-créditos; los rate limits se aplican por key/IP (el cliente reintenta ante 429).
-
-## 2. Los dos backends
-
-| Backend | Qué hace | Cuándo usarlo |
-|---|---|---|
-| `rest` (default) | Llama a la API REST de Freepik directamente | Cientos de prompts en serie, barato, determinista, sin supervisión |
-| `agent` | Lanza `claude` + el **MCP de Freepik** como agente simple | Da sentido al MCP; el agente abstrae endpoint/polling; mismo patrón que "Publicar con IA" |
-
-El backend `agent` requiere que el **MCP de Freepik esté disponible** para `claude`.
-El servidor MCP (`https://api.freepik.com/mcp`) **autentica con la propia API key
-por header** (no necesita el flujo OAuth de `/mcp`): basta pasar un `--mcp-config`
-como [`examples/freepik-mcp.json`](../examples/freepik-mcp.json), que toma la clave
-de `FREEPIK_API_KEY`:
+La autogeneración usa el MCP de Magnific a través del CLI `claude`. Autentícalo
+**una vez** (login OAuth):
 
 ```bash
-murray3d autogen <prompts.json> --backend agent --mcp-config examples/freepik-mcp.json
+# Opción A: connector de claude.ai
+/mcp            # y autentica "Magnific"
+
+# Opción B: añadir el servidor MCP al CLI
+claude mcp add --transport http magnific https://mcp.magnific.com
+claude mcp list # debe salir "magnific" como connected
 ```
 
-> Por MCP el modelo de imagen es **Mystic** (`create_image_mystic` /
-> `text_to_image_mystic_sync`); **flux-dev solo existe en el backend `rest`**.
+Alternativa: pasar el transporte con `--mcp-config`
+([`examples/magnific-mcp.json`](../examples/magnific-mcp.json)) — el login OAuth
+sigue siendo necesario una vez. No hace falta ninguna API key: el gasto va por
+**créditos** de tu cuenta Magnific (compruébalo con la herramienta `account_balance`
+del MCP).
 
-### Qué expone el MCP de Freepik (verificado)
+## 2. Modelos disponibles
 
-El "Freepik Toolkit" MCP ofrece 14 herramientas: **imagen** (Mystic), **vídeo**
-image-to-video (Kling), detección de IA, **iconos** y **búsqueda/descarga de stock**.
-**No incluye ninguna herramienta de generación 3D** (ni text-to-3D ni image-to-3D):
-confirma que la malla 3D no es posible por API/MCP de Freepik. Lo único "3D" es
-descargar recursos 3D **ya existentes** del banco de stock (`search_resources` +
-`download_resource_by_id`), no generarlos desde un prompt.
+- **Imagen** (`--model`, `mode` de Magnific): `flux-dev` (barato, ~10 cr),
+  `seedream-5-pro` (~100 cr), `mystic`, `imagen3`, etc. Default: el
+  `recommended_model` del JSON.
+- **3D** (`models3d_generate`): `tripo-p1` (default, rápido), `tripo-v31` (HQ,
+  hasta 2M caras), `trellis-2`. Salida **GLB**. Admite **multiview** (2–4 vistas).
 
 ## 3. Uso por CLI
 
 ```bash
-# Validar el JSON y ver cuántas imágenes saldrían y con qué nombres
+# Validar el JSON y ver cuántas imágenes saldrían y con qué nombres (sin gasto)
 murray3d autogen-validate examples/prompts-miniaturas.sample.json
 
-# Prueba de humo: una sola imagen (rápido, para verificar la clave)
+# Prueba de humo: una sola imagen (rápido, para verificar el MCP)
 murray3d autogen-image "Miniature figure of Goku, 40mm base, studio photo" out.jpg --aspect 3:4
 
-# Lote completo (rest). Reanudable: re-ejecuta y salta lo ya hecho.
+# Lote de imágenes. Reanudable: re-ejecuta y salta lo ya hecho.
 murray3d autogen examples/prompts-miniaturas.sample.json --out ./salida
 
 # Primeras pruebas: solo los 3 primeros, semilla reproducible
 murray3d autogen examples/prompts-miniaturas.sample.json --limit 3 --seed 42
-
-# Con el agente + MCP de Freepik
-murray3d autogen examples/prompts-miniaturas.sample.json --backend agent --claude-model haiku
 ```
 
 Opciones de `autogen`:
-`--out DIR` · `--backend rest|agent` · `--model flux-dev|mystic|imagen3` ·
-`--aspect 3:4` · `--limit N` · `--seed S` · `--resume/--no-resume` ·
-`--make-3d` · `--claude-model` y `--mcp-config` (agente / 3D) · `--json`.
+`--out DIR` · `--model flux-dev|seedream-5-pro|…` · `--aspect 3:4` · `--limit N` ·
+`--seed S` · `--resume/--no-resume` · `--make-3d` · `--claude-model` ·
+`--mcp-config` · `--json`.
 
 ### Paso 3D (image-to-3D → GLB)
 
-El 3D **solo** es posible por el **MCP de Magnific** (OAuth); no hay REST. Va por
-un agente: `claude` + `models3d_generate`. Requisitos:
-
-1. Autentica el MCP de Magnific en `claude` **una vez**: `/mcp` (login OAuth), o
-   añádelo con su transporte ([`examples/magnific-mcp.json`](../examples/magnific-mcp.json)).
-2. Ejecuta con `--make-3d` (usa `--limit`: cada modelo gasta ~580–1160 créditos):
+Añade `--make-3d`: tras cada imagen, `models3d_generate` produce el `.glb`.
+Usa `--limit` (cada modelo gasta ~580 créditos):
 
 ```bash
 # Prueba de humo: 1 imagen -> 1 GLB
-murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d \
-    --mcp-config examples/magnific-mcp.json
+murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d
 
 # Solo el 3D desde una imagen ya generada (URL pública)
-murray3d autogen-3d "https://cdn.freepik/imagen.jpg" salida.glb \
-    --mcp-config examples/magnific-mcp.json
+murray3d autogen-3d "https://.../imagen.jpg" salida.glb
 ```
 
 Cada trabajo produce `<nombre>.jpg` y `<nombre>.glb`; el `manifest.json` guarda
@@ -139,8 +107,9 @@ de cada trabajo (`ok` / `skipped` / `error`).
 Pestaña **Autogeneración**:
 1. **Cargar JSON de prompts…** → se rellena la tabla (id, personaje, título,
    nombre de salida) y se autodetecta modelo/aspect del JSON.
-2. Ajusta backend, modelo, aspect, límite, semilla y directorio de salida.
-3. **Generar** → procesa en serie con barra de progreso y estado por fila.
+2. Ajusta modelo, aspect, límite, semilla, **También 3D** y directorio de salida.
+3. **Generar** → procesa en serie con barra de progreso y estado por fila (con 3D,
+   pide confirmación por el coste en créditos).
 
 ## 5. Formato del JSON de prompts
 
@@ -178,9 +147,11 @@ Pestaña **Autogeneración**:
 Tokens del patrón de nombres: `group`, `character`, `variant` (admite `:02d`),
 `id`, `title`, `title_snake_case`, `base_size`, `painting_style`, `base_theme`.
 
-Notas de compatibilidad con la API:
-- `aspect_ratio: "3:4"` se **mapea** al enum de Freepik `traditional_3_4`.
-- `negative_prompt` **no** lo admiten `flux-dev`/`mystic` (se omite en esos modelos).
+Notas:
+- `aspect_ratio: "3:4"` se pasa tal cual a `images_generate` (Magnific acepta
+  `3:4`, `1:1`, `16:9`, `2:3`, etc.).
+- `recommended_model` es el `mode` de Magnific (`flux-dev`, `seedream-5-pro`…).
+- `negative_prompt` es orientativo; el agente decide si lo aplica según el modelo.
 
 Hay un ejemplo válido y ejecutable en
 [`examples/prompts-miniaturas.sample.json`](../examples/prompts-miniaturas.sample.json).

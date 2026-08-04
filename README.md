@@ -18,10 +18,11 @@ Repo: <https://github.com/theburrowhub/murray3d>
 
 - Python 3.11+ (probado hasta 3.14) en macOS o Linux.
 - El CLI **`claude`** (Claude Code) instalado en el `PATH` y autenticado — es lo
-  que genera los metadatos en el flujo "Publicar con IA" (y el backend `agent` de
-  autogeneración).
+  que genera los metadatos en "Publicar con IA" y las imágenes/3D en la
+  autogeneración.
 - Una **API key de 3DBundle**.
-- (Opcional, solo para autogeneración) una **API key de Freepik** (`FREEPIK_API_KEY`).
+- (Solo para autogeneración) el **MCP de Magnific** disponible para `claude`
+  (`/mcp` → login OAuth, o `claude mcp add`).
 
 > Verificado en Linux (Ubuntu) con Python 3.14: `make setup`, los tests
 > unitarios (63) y el test de integración de render real (Chromium + Playwright)
@@ -107,27 +108,27 @@ publicación: por defecto, `opus`, `sonnet`, `haiku` o `fable`.
 
 ---
 
-## Autogeneración desde JSON de prompts (Freepik)
+## Autogeneración desde JSON de prompts (Magnific)
 
-Genera imágenes de miniaturas **en serie** a partir de un JSON con cientos de
-prompts, usando **Freepik**. Pensado para lotes grandes (uno a uno, `manifest.json`
+Genera imágenes de miniaturas **y su malla 3D** en serie a partir de un JSON con
+cientos de prompts. Pensado para lotes grandes (uno a uno, `manifest.json`
 reanudable, continúa ante errores). Guía completa en [`docs/autogen.md`](docs/autogen.md).
 
-- Necesita una **API key de Freepik** (`FREEPIK_API_KEY` en `.env`). Obténla en
-  <https://www.freepik.com/developers/dashboard>.
-- Dos backends de imagen: `rest` (API directa; ideal para cientos en serie) y
-  `agent` (`claude` + MCP como agente simple).
-- **Malla 3D (`--make-3d`):** la REST API solo genera imágenes, pero el **MCP de
-  Magnific** (OAuth) sí genera `.glb` (`models3d_generate`, Tripo/Trellis). El
-  paso 3D va por agente + ese MCP. ⚠️ ~580–1160 créditos por modelo — usar con
-  `--limit`. Pipeline: prompt → imagen → GLB → subir a 3DBundle.
+Igual que "Publicar con IA", **no usa ninguna API REST**: reutiliza el binario
+**`claude`** conectado al **MCP de Magnific** (`images_generate` para imagen,
+`models3d_generate` para 3D). No hace falta ninguna API key aparte.
+
+- Requiere el **MCP de Magnific** disponible para `claude`: `/mcp` (login OAuth) o
+  `claude mcp add --transport http magnific https://mcp.magnific.com`.
+- **Malla 3D (`--make-3d`):** `models3d_generate` (Tripo/Trellis → `.glb`).
+  ⚠️ ~580 créditos por modelo — usar con `--limit`. Pipeline: prompt → imagen →
+  GLB → subir a 3DBundle.
 
 ```bash
-murray3d autogen-validate examples/prompts-miniaturas.sample.json   # inspecciona
+murray3d autogen-validate examples/prompts-miniaturas.sample.json   # inspecciona (sin gasto)
 murray3d autogen-image "Miniature figure of Goku, 40mm base" out.jpg   # 1 imagen
 murray3d autogen examples/prompts-miniaturas.sample.json --limit 3 --seed 42
-murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d \
-    --mcp-config examples/magnific-mcp.json                          # imagen + GLB
+murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d   # imagen + GLB
 ```
 
 En la GUI hay una pestaña **Autogeneración** (cargar JSON → tabla → Generar).
@@ -183,9 +184,9 @@ murray3d/
   ai.py         invoca `claude -p` para generar metadatos (modelo y pack)
   publish.py    orquestación: descargar -> render -> IA -> publicar
   prompts.py    modelos del JSON de prompts + convención de nombres (autogen)
-  freepik.py    cliente REST de Freepik (text-to-image async con polling)
-  agent_gen.py  backend "agente simple" de imagen: `claude` + MCP de Freepik
+  agent_gen.py  imagen por agente: `claude` + MCP de Magnific (images_generate)
   mesh_gen.py   image-to-3D (GLB) por agente + MCP de Magnific (models3d_generate)
+  download.py   descarga de URLs (imágenes / GLB) a disco
   autogen.py    orquestación por lotes (serie, reanudable, manifest, +3D)
   cli.py        CLI (typer)
   gui/          app PySide6 (visor, gestor de modelos/packs, autogeneración)

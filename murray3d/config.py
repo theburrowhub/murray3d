@@ -8,8 +8,6 @@ from pydantic import BaseModel
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BASE_URL = "https://murrayslab.com/3dbundle/api"
 DEFAULT_CATEGORIES = ["figures", "scenery", "both"]
-DEFAULT_FREEPIK_BASE_URL = "https://api.freepik.com/v1"
-DEFAULT_FREEPIK_HEADER = "x-freepik-api-key"
 
 
 class ConfigError(Exception):
@@ -22,10 +20,7 @@ class Settings(BaseModel):
     cache_dir: Path
     shots_dir: Path
     known_categories: list[str]
-    # Autogeneración (Freepik). Opcionales: solo hacen falta para `autogen`.
-    freepik_api_key: str | None = None
-    freepik_base_url: str = DEFAULT_FREEPIK_BASE_URL
-    freepik_header: str = DEFAULT_FREEPIK_HEADER
+    # Directorio de salida de la autogeneración (imágenes + GLB).
     autogen_dir: Path | None = None
 
 
@@ -62,27 +57,11 @@ def load_settings(key_path: Path | None = None, *,
     cache_dir.mkdir(parents=True, exist_ok=True)
     shots_dir.mkdir(parents=True, exist_ok=True)
 
-    fp_base = os.environ.get("FREEPIK_BASE_URL", DEFAULT_FREEPIK_BASE_URL).rstrip("/")
-
     return Settings(
         base_url=base,
         api_key=api_key or "",
         cache_dir=cache_dir,
         shots_dir=shots_dir,
         known_categories=list(DEFAULT_CATEGORIES),
-        freepik_api_key=os.environ.get("FREEPIK_API_KEY") or None,
-        freepik_base_url=fp_base,
-        freepik_header=os.environ.get("FREEPIK_API_HEADER", DEFAULT_FREEPIK_HEADER),
         autogen_dir=autogen_dir,
     )
-
-
-def require_freepik(settings: Settings) -> str:
-    """Devuelve la API key de Freepik o lanza ConfigError si no está configurada."""
-    if not settings.freepik_api_key:
-        raise ConfigError(
-            "No se encontró la API key de Freepik. Define FREEPIK_API_KEY en .env "
-            "o como variable de entorno (obtén la clave en "
-            "https://www.freepik.com/developers/dashboard)."
-        )
-    return settings.freepik_api_key
