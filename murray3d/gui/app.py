@@ -20,16 +20,30 @@ def _load_or_ask_settings(app):
         return load_settings()
 
 
-def run_gui():
+def run_gui(autogen_only: bool = False):
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QMessageBox, QTabWidget,
     )
     from .autogen_view import build_autogen_view
-    from .models_view import build_models_view
-    from .packs_view import build_packs_view
 
     app = QApplication(sys.argv)
     app.setApplicationName("murray3d")
+
+    # Modo autogeneración: abre solo esa pestaña, sin autenticar en 3DBundle
+    # (la autogeneración usa el MCP de Magnific, no la API de 3DBundle).
+    if autogen_only:
+        settings = load_settings(require_api_key=False)
+        win = QMainWindow()
+        win.setWindowTitle("murray3d — Autogeneración")
+        win.resize(1100, 760)
+        tabs = QTabWidget()
+        tabs.addTab(build_autogen_view(settings), "Autogeneración")
+        win.setCentralWidget(tabs)
+        win.show()
+        sys.exit(app.exec())
+
+    from .models_view import build_models_view
+    from .packs_view import build_packs_view
 
     settings = _load_or_ask_settings(app)
     client = Client(settings)

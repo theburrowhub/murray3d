@@ -505,9 +505,10 @@ def mcp_check():
 
 
 @app.command()
-def gui():
+def gui(autogen_only: bool = typer.Option(False, "--autogen-only",
+        help="Abre solo la pestaña de Autogeneración (sin auth de 3DBundle)")):
     from .gui.app import run_gui
-    run_gui()
+    run_gui(autogen_only=autogen_only)
 
 
 if __name__ == "__main__":
