@@ -27,9 +27,10 @@ from .agent_gen import default_runner
 from .ai import _extract_inner_json
 from .download import download_url
 
-# Prefijo de herramientas del MCP de Magnific (según el nombre del server en la
-# config MCP; examples/magnific-mcp.json lo llama "magnific").
-DEFAULT_ALLOWED_TOOLS = "mcp__magnific"
+# Prefijo de herramientas del MCP de Magnific. El connector de claude.ai se
+# registra como "claude.ai Magnific" -> `mcp__claude_ai_Magnific`. Con
+# `claude mcp add magnific …` sería `mcp__magnific` (ajústalo con allowed_tools).
+DEFAULT_ALLOWED_TOOLS = "mcp__claude_ai_Magnific"
 
 MESH_JSON_SCHEMA = {
     "type": "object",

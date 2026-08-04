@@ -35,7 +35,7 @@ def test_generate_from_image_parses_agent_json():
     assert cmd[0] == "claude" and "-p" in cmd
     assert "--json-schema" in cmd
     assert "--allowedTools" in cmd
-    assert "mcp__magnific" in cmd
+    assert "mcp__claude_ai_Magnific" in cmd
     assert "--mcp-config" in cmd and "examples/magnific-mcp.json" in cmd
     assert "--model" in cmd and "sonnet" in cmd
 

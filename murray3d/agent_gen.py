@@ -24,7 +24,10 @@ from .ai import _extract_inner_json  # reutilizamos el parseo del wrapper de cla
 from .download import download_url
 
 # Herramientas MCP permitidas por defecto: todo el server de Magnific.
-DEFAULT_ALLOWED_TOOLS = "mcp__magnific"
+# El connector de claude.ai se registra como "claude.ai Magnific" -> prefijo
+# `mcp__claude_ai_Magnific`. Si lo añades con `claude mcp add magnific …`, el
+# prefijo sería `mcp__magnific`: ajústalo con `allowed_tools`/`--allowedTools`.
+DEFAULT_ALLOWED_TOOLS = "mcp__claude_ai_Magnific"
 DEFAULT_IMAGE_MODEL = "flux-dev"  # `mode` de Magnific (flux-dev, seedream-5-pro, …)
 
 AGENT_JSON_SCHEMA = {

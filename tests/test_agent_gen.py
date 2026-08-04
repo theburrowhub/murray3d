@@ -36,7 +36,7 @@ def test_generate_parses_agent_json():
     assert "--model" in cmd and "haiku" in cmd
     assert "--mcp-config" in cmd and "/tmp/mcp.json" in cmd
     assert "--allowedTools" in cmd
-    assert "mcp__magnific" in cmd
+    assert "mcp__claude_ai_Magnific" in cmd
 
 
 def test_generate_raises_when_no_urls():
