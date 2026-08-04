@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "freepik": {
+      "type": "http",
+      "url": "https://api.freepik.com/mcp",
+      "headers": {
+        "x-freepik-api-key": "${FREEPIK_API_KEY}"
+      }
+    }
+  }
+}

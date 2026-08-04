@@ -41,8 +41,27 @@ créditos; los rate limits se aplican por key/IP (el cliente reintenta ante 429)
 | `rest` (default) | Llama a la API REST de Freepik directamente | Cientos de prompts en serie, barato, determinista, sin supervisión |
 | `agent` | Lanza `claude` + el **MCP de Freepik** como agente simple | Da sentido al MCP; el agente abstrae endpoint/polling; mismo patrón que "Publicar con IA" |
 
-El backend `agent` requiere que el **MCP de Freepik esté añadido y autenticado**
-en tu CLI `claude` (`/mcp` o `claude mcp add`), o pásalo con `--mcp-config`.
+El backend `agent` requiere que el **MCP de Freepik esté disponible** para `claude`.
+El servidor MCP (`https://api.freepik.com/mcp`) **autentica con la propia API key
+por header** (no necesita el flujo OAuth de `/mcp`): basta pasar un `--mcp-config`
+como [`examples/freepik-mcp.json`](../examples/freepik-mcp.json), que toma la clave
+de `FREEPIK_API_KEY`:
+
+```bash
+murray3d autogen <prompts.json> --backend agent --mcp-config examples/freepik-mcp.json
+```
+
+> Por MCP el modelo de imagen es **Mystic** (`create_image_mystic` /
+> `text_to_image_mystic_sync`); **flux-dev solo existe en el backend `rest`**.
+
+### Qué expone el MCP de Freepik (verificado)
+
+El "Freepik Toolkit" MCP ofrece 14 herramientas: **imagen** (Mystic), **vídeo**
+image-to-video (Kling), detección de IA, **iconos** y **búsqueda/descarga de stock**.
+**No incluye ninguna herramienta de generación 3D** (ni text-to-3D ni image-to-3D):
+confirma que la malla 3D no es posible por API/MCP de Freepik. Lo único "3D" es
+descargar recursos 3D **ya existentes** del banco de stock (`search_resources` +
+`download_resource_by_id`), no generarlos desde un prompt.
 
 ## 3. Uso por CLI
 
