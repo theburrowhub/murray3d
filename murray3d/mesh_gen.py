@@ -45,17 +45,24 @@ class MeshGenError(Exception):
     pass
 
 
-def build_mesh_prompt(image_url: str, fmt: str = "glb") -> str:
+def build_mesh_prompt(image_url: str, fmt: str = "glb",
+                      model3d: str = "tripo-p1") -> str:
+    # `models3d_generate` recibe un creationIdentifier (imagen ya en Magnific),
+    # no una URL: por eso hay que importar la imagen externa primero.
     return (
-        "Usa la herramienta `models3d_generate` del servidor MCP de Magnific para "
-        "generar UN modelo 3D a partir de la siguiente imagen (image-to-3D). Si la "
-        "generación es asíncrona, espera (haz polling) hasta que termine y recoge "
-        "la URL del modelo resultante.\n\n"
-        f"Formato de salida deseado: {fmt.upper()}\n"
+        "Genera UN modelo 3D a partir de la siguiente imagen usando el MCP de "
+        "Magnific (image-to-3D → GLB).\n"
         f"Imagen de entrada (URL): {image_url}\n\n"
-        "Cuando tengas el resultado, devuelve SOLO el objeto JSON pedido con "
-        "`model_urls` (la lista de URLs de los modelos 3D generados). No descargues "
-        "el modelo; solo devuelve su URL."
+        "Pasos:\n"
+        "1) Importa la imagen a Magnific como creation para obtener su "
+        "`creationIdentifier` (p. ej. `creations_upload_image` con la URL, o "
+        "`creations_request_upload` + `creations_finalize_upload`).\n"
+        f"2) Llama a `models3d_generate` con ese `creationIdentifier` y "
+        f"`model`={model3d} (salida {fmt.upper()}).\n"
+        "3) Espera con `creations_wait` hasta que termine y toma la URL del "
+        "modelo (`modelGlbUrl`).\n\n"
+        "Devuelve SOLO el objeto JSON pedido con `model_urls` (la lista de URLs "
+        "de los modelos 3D generados). No descargues el modelo; solo su URL."
     )
 
 
@@ -65,13 +72,15 @@ class AgentMeshGenerator:
     def __init__(self, runner=None, claude_model: str | None = None,
                  mcp_config: str | None = None,
                  allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
-                 extra_args: list[str] | None = None, fmt: str = "glb"):
+                 extra_args: list[str] | None = None, fmt: str = "glb",
+                 model3d: str = "tripo-p1"):
         self.runner = runner or default_runner
         self.claude_model = claude_model
         self.mcp_config = mcp_config
         self.allowed_tools = allowed_tools
         self.extra_args = list(extra_args or [])
         self.fmt = fmt
+        self.model3d = model3d
 
     def _cmd(self, prompt_text: str) -> list[str]:
         cmd = [
@@ -91,7 +100,7 @@ class AgentMeshGenerator:
                             ) -> list[str]:
         if not image_url:
             raise MeshGenError("Falta la URL de la imagen de entrada para el 3D.")
-        prompt_text = build_mesh_prompt(image_url, fmt or self.fmt)
+        prompt_text = build_mesh_prompt(image_url, fmt or self.fmt, self.model3d)
         stdout = self.runner(self._cmd(prompt_text))
         inner = _extract_inner_json(stdout)
         urls = inner.get("model_urls") if isinstance(inner, dict) else None

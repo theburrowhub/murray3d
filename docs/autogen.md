@@ -113,6 +113,22 @@ Cada trabajo produce `<nombre>.jpg` y `<nombre>.glb`; el `manifest.json` guarda
 pasada (resume) se **reutiliza su URL** para reintentar solo el 3D (no re-gasta
 créditos de imagen).
 
+**Costes reales (verificados en vivo con `simulate_cost` + una generación real):**
+
+| Paso | Modelo | Créditos |
+|---|---|---|
+| Imagen | flux-dev | 10 |
+| Imagen | seedream-5-pro | 100 |
+| 3D | tripo-p1 (rápido) | 580 |
+| 3D | tripo-v31 (HQ, hasta 2M caras) | 580 |
+| 3D | trellis-2 | 730 |
+
+Una mini imagen+3D con flux-dev + tripo-p1 ≈ **590 créditos**. Un GLB de tripo-p1
+sale ~570 KB / ~10k caras (cargable con trimesh → subible a 3DBundle). Detalle de
+API: `models3d_generate` recibe un `creationIdentifier` (imagen ya en Magnific),
+no una URL; el agente importa la imagen primero. Admite **multiview** (2–4 vistas)
+para mejor malla.
+
 Salida: una imagen por prompt en `--out` (nombre según
 `automation_config.naming_convention.pattern`, p. ej.
 `dragon_ball_goku_01_kamehameha_cargando.jpg`) y un `manifest.json` con el estado
