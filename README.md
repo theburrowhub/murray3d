@@ -131,7 +131,10 @@ murray3d autogen examples/prompts-miniaturas.sample.json --limit 3 --seed 42
 murray3d autogen examples/prompts-miniaturas.sample.json --limit 1 --make-3d   # imagen + GLB
 ```
 
-En la GUI hay una pestaña **Autogeneración** (cargar JSON → tabla → Generar).
+En la GUI hay una pestaña **Autogeneración** (cargar JSON → tabla → Generar) con
+**previsualización** de la imagen y el modelo 3D generados, y **reanudación**: si
+cierras la app a mitad, al recargar el JSON marca lo ya hecho y continúa. Abre solo
+esa pestaña (sin API key de 3DBundle) con `murray3d gui --autogen-only`.
 
 ## CLI (y uso por Claude Code)
 

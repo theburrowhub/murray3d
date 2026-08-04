@@ -119,6 +119,12 @@ Pestaña **Autogeneración**:
 2. Ajusta modelo, aspect, límite, semilla, **También 3D** y directorio de salida.
 3. **Generar** → procesa en serie con barra de progreso y estado por fila (con 3D,
    pide confirmación por el coste en créditos).
+4. **Previsualización** (panel derecho): selecciona una fila ya generada para ver
+   su **imagen** y su **modelo 3D** (visor interactivo) sin salir de la app.
+5. **Reanudación:** si la app se cierra a mitad de un lote, vuelve a cargar el
+   mismo JSON con el mismo directorio de salida: las miniaturas ya hechas salen
+   marcadas (`✔ 3D` / `✔ img`) y **Generar** continúa donde iba (salta lo hecho,
+   reutiliza la URL de imagen para reintentar solo el 3D si hiciera falta).
 
 ## 5. Formato del JSON de prompts
 

@@ -1,8 +1,10 @@
-"""Pestaña "Autogeneración": carga un JSON de prompts y genera imágenes en serie.
+"""Pestaña "Autogeneración": carga un JSON de prompts y genera imágenes (+3D).
 
 La lógica pesada vive en ``murray3d.autogen`` / ``murray3d.prompts``; esta vista
-solo orquesta Qt: tabla de trabajos, configuración (backend/modelo/aspect/salida)
-y un worker con señal de progreso que actualiza cada fila en vivo.
+orquesta Qt: tabla de trabajos, configuración, un worker con progreso por fila,
+un **panel de previsualización** (imagen + visor 3D) y **reanudación visible**
+(al cargar un JSON marca las filas que ya tienen salida en disco; ``run_autogen``
+salta lo hecho, así que si la app se cerró a medias, continúa donde iba).
 """
 from __future__ import annotations
 
@@ -20,10 +22,11 @@ from ..prompts import PromptError, iter_jobs, load_prompt_doc
 
 def build_autogen_view(settings):
     from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+    from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import (
         QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-        QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget,
-        QTableWidgetItem, QVBoxLayout, QWidget,
+        QLineEdit, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSpinBox,
+        QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
     )
 
     pool = QThreadPool.globalInstance()
@@ -63,12 +66,32 @@ def build_autogen_view(settings):
     out_row.addWidget(QLabel("Salida:")); out_row.addWidget(out_dir, 1); out_row.addWidget(btn_browse)
     outer.addLayout(out_row)
 
-    # --- Tabla de trabajos ---
+    # --- Centro: tabla (izq) + previsualización (der) ---
+    split = QSplitter(Qt.Horizontal)
+
     table = QTableWidget(0, 5)
     table.setHorizontalHeaderLabels(["id", "Personaje", "Título", "Nombre salida", "Estado"])
     table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
     table.setEditTriggers(QTableWidget.NoEditTriggers)
-    outer.addWidget(table, 1)
+    table.setSelectionBehavior(QTableWidget.SelectRows)
+    split.addWidget(table)
+
+    preview = QTabWidget()
+    # Pestaña Imagen
+    img_scroll = QScrollArea(); img_scroll.setWidgetResizable(True)
+    img_label = QLabel("Selecciona una fila ya generada para previsualizar.")
+    img_label.setAlignment(Qt.AlignCenter); img_label.setWordWrap(True)
+    img_scroll.setWidget(img_label)
+    preview.addTab(img_scroll, "Imagen")
+    # Pestaña 3D (el visor se crea de forma perezosa al ver el primer .glb)
+    viewer_box = QWidget(); viewer_layout = QVBoxLayout(viewer_box)
+    viewer_hint = QLabel("El visor 3D se cargará al seleccionar una fila con .glb.")
+    viewer_hint.setAlignment(Qt.AlignCenter); viewer_hint.setWordWrap(True)
+    viewer_layout.addWidget(viewer_hint)
+    preview.addTab(viewer_box, "3D")
+    split.addWidget(preview)
+    split.setSizes([560, 460])
+    outer.addWidget(split, 1)
 
     # --- Fila inferior: generar + progreso ---
     bottom = QHBoxLayout()
@@ -79,11 +102,68 @@ def build_autogen_view(settings):
     bottom.addWidget(btn_gen); bottom.addWidget(progress, 1); bottom.addWidget(status)
     outer.addLayout(bottom)
 
-    state = {"doc": None, "jobs": [], "row_by_id": {}, "running": False}
+    state = {"doc": None, "jobs": [], "row_by_id": {}, "running": False,
+             "worker_ref": None, "viewer": None}
 
     def selected_model():
         return None if model.currentIndex() == 0 else model.currentText()
 
+    def out_base() -> Path | None:
+        t = out_dir.text().strip()
+        return Path(t) if t else None
+
+    # ---- Previsualización ----
+    def ensure_viewer():
+        if state["viewer"] is None:
+            try:
+                from .viewer import build_viewer_widget
+                ModelViewer = build_viewer_widget()
+                mv = ModelViewer()
+                viewer_hint.hide()
+                viewer_layout.addWidget(mv)
+                state["viewer"] = mv
+            except Exception as e:  # noqa: BLE001 - visor no disponible (p.ej. headless)
+                viewer_hint.setText(f"Visor 3D no disponible: {e}")
+                return None
+        return state["viewer"]
+
+    def preview_selected():
+        it = table.currentItem()
+        base = out_base()
+        if it is None or base is None:
+            return
+        name_item = table.item(it.row(), 3)
+        if name_item is None:
+            return
+        name = name_item.text()
+        jpg = base / f"{name}.jpg"
+        glb = base / f"{name}.glb"
+        # Imagen
+        if jpg.exists() and jpg.stat().st_size > 0:
+            pix = QPixmap(str(jpg))
+            if not pix.isNull():
+                vp = img_scroll.viewport().width()
+                w = vp if vp > 60 else 440
+                img_label.setPixmap(pix.scaledToWidth(int(w), Qt.SmoothTransformation))
+                img_label.setText("")
+        else:
+            img_label.setPixmap(QPixmap())
+            img_label.setText("(esta miniatura aún no tiene imagen)")
+        # 3D
+        if glb.exists() and glb.stat().st_size > 0:
+            mv = ensure_viewer()
+            if mv is not None:
+                try:
+                    mv.show_model(glb, settings.cache_dir)
+                except Exception:  # noqa: BLE001
+                    pass
+        elif state["viewer"] is not None:
+            try:
+                state["viewer"].clear()
+            except Exception:  # noqa: BLE001
+                pass
+
+    # ---- Tabla / estado ----
     def populate_table(jobs):
         table.setRowCount(0)
         state["row_by_id"] = {}
@@ -101,6 +181,24 @@ def build_autogen_view(settings):
         if r is not None:
             table.setItem(r, 4, QTableWidgetItem(text))
 
+    def mark_existing():
+        """Marca en la tabla lo ya generado en disco (reanudación visible)."""
+        base = out_base()
+        if base is None:
+            return 0
+        done = 0
+        for j in state["jobs"]:
+            r = state["row_by_id"].get(j.id)
+            if r is None:
+                continue
+            glb = base / f"{j.output_name}.glb"
+            jpg = base / f"{j.output_name}.jpg"
+            if glb.exists() and glb.stat().st_size > 0:
+                table.setItem(r, 4, QTableWidgetItem("✔ 3D")); done += 1
+            elif jpg.exists() and jpg.stat().st_size > 0:
+                table.setItem(r, 4, QTableWidgetItem("✔ img")); done += 1
+        return done
+
     def refresh_jobs():
         doc = state["doc"]
         if not doc:
@@ -109,7 +207,9 @@ def build_autogen_view(settings):
         state["jobs"] = jobs
         populate_table(jobs)
         btn_gen.setEnabled(bool(jobs) and not state["running"])
-        status.setText(f"{len(jobs)} trabajos")
+        done = mark_existing()
+        status.setText(f"{len(jobs)} trabajos"
+                       + (f" · {done} ya generados (se reanudará)" if done else ""))
 
     def load_json():
         path, _ = QFileDialog.getOpenFileName(root, "Elige el JSON de prompts", "",
@@ -134,6 +234,8 @@ def build_autogen_view(settings):
         d = QFileDialog.getExistingDirectory(root, "Directorio de salida", out_dir.text() or "")
         if d:
             out_dir.setText(d)
+            if state["jobs"]:
+                mark_existing()
 
     # --- Worker con progreso ---
     class Signals(QObject):
@@ -170,8 +272,6 @@ def build_autogen_view(settings):
                 if callable(close):
                     close()
 
-    state["worker_ref"] = None
-
     def on_progress(done, total, job_id, name):
         progress.setMaximum(total)
         progress.setValue(done)
@@ -182,12 +282,14 @@ def build_autogen_view(settings):
         for r in results:
             set_row_status(r["id"], {"ok": "✔", "skipped": "↷ saltado",
                                      "error": "✗ " + r.get("error", "")[:40]}[r["status"]])
+        mark_existing()  # distingue img / 3D según ficheros
         s = summarize(results)
         progress.setValue(progress.maximum())
         status.setText(f"Hecho: {s['ok']} ok · {s['skipped']} saltados · {s['errors']} errores")
         state["running"] = False
         state["worker_ref"] = None
         btn_gen.setEnabled(True)
+        preview_selected()
 
     def on_failed(msg):
         QMessageBox.critical(root, "Error de autogeneración", msg)
@@ -200,8 +302,8 @@ def build_autogen_view(settings):
         doc = state["doc"]
         if not doc or not state["jobs"]:
             return
-        out = out_dir.text().strip()
-        if not out:
+        base = out_base()
+        if base is None:
             QMessageBox.information(root, "Salida", "Indica un directorio de salida.")
             return
         mk3d = make3d.isChecked()
@@ -223,7 +325,7 @@ def build_autogen_view(settings):
         status.setText("Generando…")
         lim = limit.value() or None
         sd = seed.value() or None
-        w = AutogenWorker(doc, generator, Path(out), selected_model(),
+        w = AutogenWorker(doc, generator, base, selected_model(),
                           aspect.text().strip() or None, lim, sd, mk3d, mesh)
         w.signals.progress.connect(on_progress, Qt.QueuedConnection)
         w.signals.finished.connect(on_finished, Qt.QueuedConnection)
@@ -235,5 +337,7 @@ def build_autogen_view(settings):
     btn_browse.clicked.connect(browse_out)
     btn_gen.clicked.connect(generate)
     model.currentIndexChanged.connect(lambda *_: refresh_jobs())
+    out_dir.editingFinished.connect(lambda: state["jobs"] and mark_existing())
+    table.itemSelectionChanged.connect(preview_selected)
 
     return root
