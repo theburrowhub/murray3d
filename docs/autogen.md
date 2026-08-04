@@ -34,6 +34,15 @@ sigue siendo necesario una vez. No hace falta ninguna API key: el gasto va por
 **créditos** de tu cuenta Magnific (compruébalo con la herramienta `account_balance`
 del MCP).
 
+**Detección de caducidad.** El connector OAuth de claude.ai caduca cada cierto
+tiempo. La app lo comprueba **antes de cada tirada** (preflight) y, si no está
+autenticado, aborta con instrucciones de re-login (en la GUI, un diálogo). Puedes
+comprobarlo a mano en cualquier momento:
+
+```bash
+murray3d mcp-check   # ✔ autenticado / ✗ + cómo re-autenticar
+```
+
 ## 2. Modelos disponibles
 
 - **Imagen** (`--model`, `mode` de Magnific): `flux-dev` (barato, ~10 cr),

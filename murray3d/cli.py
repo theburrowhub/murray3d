@@ -11,6 +11,7 @@ from .ai import AiError
 from .api import ApiError, Client
 from .config import ConfigError, load_settings
 from .convert import ConvertError
+from .mcp_health import McpAuthError, ensure_magnific_auth
 from .mesh_gen import MeshGenError
 from .prompts import PromptError
 from .render import RenderError
@@ -34,7 +35,7 @@ def _run(fn):
     try:
         return fn()
     except (ApiError, ConfigError, RenderError, AiError, ConvertError,
-            PromptError, AgentGenError, MeshGenError) as e:
+            PromptError, AgentGenError, MeshGenError, McpAuthError) as e:
         typer.echo(str(e))
         raise typer.Exit(code=1)
 
@@ -391,6 +392,8 @@ def autogen_cmd(prompts_file: Path,
     doc = _run(lambda: load_prompt_doc(prompts_file))
     settings = _run(lambda: load_settings(require_api_key=False))
     out_dir = Path(out) if out else (settings.autogen_dir / Path(prompts_file).stem)
+    typer.echo("Comprobando autenticación del MCP de Magnific…")
+    _run(ensure_magnific_auth)
     gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
                                        mcp_config=mcp_config))
     mesh = None
@@ -422,6 +425,14 @@ def autogen_cmd(prompts_file: Path,
             if r["status"] == "error":
                 typer.echo(f"  ✗ [{r['id']}] {r['name']}: {r['error']}")
     if s["errors"]:
+        # Si hubo errores, comprueba si el MCP caducó a mitad de lote y avisa.
+        from .mcp_health import REAUTH_HINT, magnific_status
+        try:
+            ok, _ = magnific_status()
+            if not ok:
+                typer.echo("\n⚠️  " + REAUTH_HINT)
+        except McpAuthError:
+            pass
         raise typer.Exit(code=1)
 
 
@@ -435,6 +446,7 @@ def autogen_image(prompt: str, out: Path,
                   mcp_config: str = typer.Option(None, "--mcp-config")):
     """Prueba de humo: genera UNA imagen desde un prompt y la guarda en `out`."""
     settings = _run(lambda: load_settings(require_api_key=False))
+    _run(ensure_magnific_auth)
     gen = _run(lambda: _make_generator(settings, claude_model=claude_model,
                                        mcp_config=mcp_config))
     try:
@@ -457,11 +469,25 @@ def autogen_3d(image_url: str, out: Path,
     Vía agente + MCP de Magnific (`models3d_generate`). ⚠️ Gasta ~580–1160 créditos.
     """
     settings = _run(lambda: load_settings(require_api_key=False))
+    _run(ensure_magnific_auth)
     mesh = _run(lambda: _make_mesh_generator(settings, claude_model=claude_model,
                                              mcp_config=mcp_config))
     urls = _run(lambda: mesh.generate_from_image(image_url))
     _run(lambda: mesh.download(urls[0], Path(out)))
     _dump({"model_url": urls[0], "path": str(out)})
+
+
+@app.command("mcp-check")
+def mcp_check():
+    """Comprueba si el MCP de Magnific está autenticado en `claude` (para autogen)."""
+    from .mcp_health import magnific_status
+    ok, detail = _run(magnific_status)
+    if ok:
+        typer.echo(f"✔ MCP de Magnific autenticado.  ({detail})")
+    else:
+        from .mcp_health import REAUTH_HINT
+        typer.echo(f"✗ {detail}\n\n{REAUTH_HINT}")
+        raise typer.Exit(code=1)
 
 
 @app.command()

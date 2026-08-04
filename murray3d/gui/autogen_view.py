@@ -14,6 +14,7 @@ from ..autogen import (
     run_autogen,
     summarize,
 )
+from ..mcp_health import ensure_magnific_auth
 from ..prompts import PromptError, iter_jobs, load_prompt_doc
 
 
@@ -156,6 +157,7 @@ def build_autogen_view(settings):
                 self.signals.progress.emit(i, total, job.id, job.output_name)
 
             try:
+                ensure_magnific_auth()  # preflight: MCP caducado -> re-autenticar
                 results = run_autogen(doc, generator, out, on_progress=on_prog,
                                       model=model_ov, aspect_ratio=aspect_ov,
                                       limit=lim, seed=sd, make_3d=mk3d,

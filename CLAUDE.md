@@ -60,6 +60,7 @@ murray3d batch-upload <ruta…> [--json]      # ficheros o carpetas -> sube todo
 murray3d batch-ai-publish [ids…] [--all-drafts] [--yes] [--model …] [--json]
 
 # Autogeneración desde JSON de prompts (claude + MCP de Magnific) — ver docs/autogen.md
+murray3d mcp-check                                        # ¿MCP de Magnific autenticado?
 murray3d autogen-validate <prompts.json>                 # cuántas imágenes y nombres
 murray3d autogen-image "<prompt>" <out.jpg> [--aspect 3:4]   # prueba de humo (1 img)
 murray3d autogen-3d <image_url> <out.glb> [--mcp-config …]    # image-to-3D (models3d_generate)
