@@ -36,16 +36,31 @@ def _read_key_file(key_path: Path) -> str | None:
     return None
 
 
+def user_config_key_path() -> Path:
+    """Ruta del key.txt en el directorio de configuración de usuario (XDG)."""
+    home = Path(os.environ.get("HOME", str(Path.home())))
+    base = os.environ.get("XDG_CONFIG_HOME") or str(home / ".config")
+    return Path(base) / "murray3d" / "key.txt"
+
+
 def load_settings(key_path: Path | None = None, *,
                   require_api_key: bool = True) -> Settings:
-    if key_path is None:
-        key_path = PROJECT_ROOT / "key.txt"
-
-    api_key = os.environ.get("MURRAY_API_KEY") or _read_key_file(key_path)
+    # Orden: MURRAY_API_KEY > key_path explícito > ~/.config/murray3d/key.txt >
+    # key.txt del proyecto (compatibilidad).
+    api_key = os.environ.get("MURRAY_API_KEY")
+    if not api_key:
+        if key_path is not None:
+            candidates = [Path(key_path)]
+        else:
+            candidates = [user_config_key_path(), PROJECT_ROOT / "key.txt"]
+        for cand in candidates:
+            api_key = _read_key_file(cand)
+            if api_key:
+                break
     if not api_key and require_api_key:
         raise ConfigError(
-            "No se encontró la API key. Define MURRAY_API_KEY o crea key.txt "
-            f"(buscado en {key_path})."
+            "No se encontró la API key. Define MURRAY_API_KEY, crea "
+            f"{user_config_key_path()} o key.txt en el proyecto."
         )
 
     base = os.environ.get("MURRAY_BASE_URL", DEFAULT_BASE_URL).rstrip("/")

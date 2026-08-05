@@ -12,7 +12,8 @@ cp .env.dist .env   # y rellena MURRAY_API_KEY
 ```
 
 - Ejecuta el CLI con **`.venv/bin/murray3d …`** (o `make cli ARGS="…"`).
-- Auth: `MURRAY_API_KEY` en `.env` o como variable de entorno. Compruébalo con
+- Auth: `MURRAY_API_KEY` (env), o `~/.config/murray3d/key.txt` (config de usuario,
+  recomendado), o `key.txt` del proyecto. Compruébalo con
   `.venv/bin/murray3d whoami` (debe imprimir el perfil).
 - El flujo "IA" ejecuta el binario **`claude`** como subproceso: debe estar en el
   `PATH` y autenticado.

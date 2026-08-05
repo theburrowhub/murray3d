@@ -49,8 +49,10 @@ python -m playwright install chromium
 python -m murray3d.gui.assets.download_model_viewer
 ```
 
-La API key se lee de `.env` (`MURRAY_API_KEY=…`) o de la variable de entorno
-`MURRAY_API_KEY`. `.env` está en `.gitignore` y nunca se sube.
+La API key se lee, en este orden, de: la variable de entorno `MURRAY_API_KEY`,
+`~/.config/murray3d/key.txt` (config de usuario, recomendado — no depende de la
+ruta del repo), o `key.txt` en el proyecto. `.env`/`key.txt` están en `.gitignore`
+y nunca se suben.
 
 ## Uso con `make`
 
